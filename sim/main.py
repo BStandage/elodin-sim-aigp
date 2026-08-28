@@ -83,8 +83,14 @@ def cleanup_stale_betaflight():
         pass
 
 
-if "--no-s10" not in sys.argv:
+# elodin executes this file TWICE (CLI parent, then the s10-managed child).
+# Only the FIRST may clean up stale processes: the child's pkill can land
+# AFTER s10 spawned the fresh Betaflight and kill it (observed 2026-08-28:
+# race dead from t=0, bridge timing out every tick). The env marker is
+# inherited by the child, which then skips the cleanup.
+if "--no-s10" not in sys.argv and not os.environ.get("AIGP_CLEANUP_DONE"):
     cleanup_stale_betaflight()
+os.environ["AIGP_CLEANUP_DONE"] = "1"
 
 
 world = el.World()
@@ -92,8 +98,18 @@ world = el.World()
 # Active race course: the PQ course extracted from the overhead render,
 # loaded through the AI-GrandPrix map loader and expressed in the sim frame
 # (drone spawn = 3 m before g0 along its entry heading; see sim/pq_course.py).
-ACTIVE_COURSE = pq_course.load_course()
+ACTIVE_COURSE = pq_course.load_course(
+    laps=int(os.environ.get("AIGP_LAPS", "2"))
+)
 pq_course.print_frame_report(ACTIVE_COURSE)
+
+# Spawn facing the first gate's entry direction (course-derived, never
+# hardcoded): the FPV camera should see g0 from the start line, and the
+# yaw loop should not open the race 90 degrees wrong.
+_yaw0 = ACTIVE_COURSE.crossings[0].heading_rad
+config.initial_quaternion = np.array(
+    [0.0, 0.0, np.sin(_yaw0 / 2.0), np.cos(_yaw0 / 2.0)]
+)
 
 drone = world.spawn(
     [
