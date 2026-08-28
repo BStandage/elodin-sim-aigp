@@ -52,6 +52,21 @@ CLI_COMMANDS = [
     "set small_angle = 180",
     # Don't fail on RX loss before we've sent RC packets
     "set failsafe_delay = 200",
+    # --- SITL airframe taming (2026-08-27) ---------------------------------
+    # The sim airframe (0.8 kg, inertia 0.0025, 8.6 N motors, 20 ms motor
+    # lag) is far more torque-rich than a real 5". Stock rate PIDs limit-
+    # cycle at ~10 Hz: motors slam min<->max, and with AIRMODE the mixer
+    # keeps average thrust high enough that min throttle cannot descend.
+    # Soften the rate loop and drop airmode so throttle authority returns.
+    "feature -AIRMODE",
+    "set p_roll = 20",
+    "set i_roll = 40",
+    "set d_roll = 12",
+    "set p_pitch = 20",
+    "set i_pitch = 40",
+    "set d_pitch = 12",
+    "set p_yaw = 25",
+    "set i_yaw = 45",
     # Persist
     "save",
 ]
