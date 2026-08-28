@@ -11,6 +11,8 @@ eeprom.bin.bak
 *_dbXXX/
 betaflight_db*/
 sitl_data/
+race_result_*.json
+out/
 *.map
 editor_output.log
 tmp/
