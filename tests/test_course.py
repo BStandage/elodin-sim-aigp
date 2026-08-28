@@ -1,81 +1,62 @@
-"""Unit tests for the gate-pass detection geometry and schematic rendering."""
+"""Elodin-facing course tests: entity naming, schematic rendering, summary.
+
+Pass-detection geometry and lap tracking are covered elodin-free in
+tests/test_pq_course.py; these tests need the `elodin` package installed
+(uv run pytest).
+"""
+
+import math
 
 from sim.course import (
-    Gate,
     GATE_ASSET,
-    GATE_INNER_W,
-    detect_gate_pass,
-    gate_name,
+    MAX_GATES,
+    entity_name,
+    print_summary,
     schematic_for,
-    EASY_COURSE,
 )
+from sim.pq_course import RaceTracker, load_course
 
 
-# Helper: a single gate at +X with default inner box
-gate_x = (Gate(0, (5.0, 0.0, 1.5)),)
+def _course():
+    if not hasattr(_course, "_c"):
+        _course._c = load_course()
+    return _course._c
 
 
-def test_x_gate_pass_centered():
-    # Drone moves from x=4 to x=6, dead-center on Y/Z
-    assert detect_gate_pass(gate_x, -1, (4.0, 0.0, 1.5), (6.0, 0.0, 1.5)) == 0
+def test_entity_names_are_kdl_safe():
+    assert entity_name("g0") == "gate_g0"
+    assert entity_name("g10-top") == "gate_g10_top"
+    for g in _course().gates:
+        assert "-" not in entity_name(g.label)
 
 
-def test_x_gate_no_pass_when_outside_inner_y():
-    # Crosses plane but Y is too far off-center
-    assert detect_gate_pass(gate_x, -1, (4.0, 1.0, 1.5), (6.0, 1.0, 1.5)) is None
-
-
-def test_x_gate_no_pass_when_outside_inner_z():
-    assert detect_gate_pass(
-        gate_x, -1, (4.0, 0.0, 5.0), (6.0, 0.0, 5.0)
-    ) is None
-
-
-def test_x_gate_no_pass_going_backwards():
-    # x is decreasing (drone flying backwards)
-    assert detect_gate_pass(gate_x, -1, (6.0, 0.0, 1.5), (4.0, 0.0, 1.5)) is None
-
-
-def test_x_gate_no_pass_when_already_done():
-    # last_gate_passed = 0 means gate 0 already done; next is 1 which doesn't exist
-    assert detect_gate_pass(gate_x, 0, (4.0, 0.0, 1.5), (6.0, 0.0, 1.5)) is None
-
-
-def test_pass_on_inner_boundary_y():
-    half = GATE_INNER_W / 2.0
-    # Exactly on the Y boundary should still count (inclusive on the half)
-    assert detect_gate_pass(
-        gate_x, -1, (4.0, half - 1e-6, 1.5), (6.0, half - 1e-6, 1.5)
-    ) == 0
-
-
-def test_pass_just_outside_inner_y():
-    half = GATE_INNER_W / 2.0
-    assert detect_gate_pass(
-        gate_x, -1, (4.0, half + 0.01, 1.5), (6.0, half + 0.01, 1.5)
-    ) is None
-
-
-def test_easy_course_is_three_x_gates_ahead_of_origin():
-    assert len(EASY_COURSE) == 3
-    for g in EASY_COURSE:
-        assert g.center[1] == 0.0
-        assert g.center[2] == 1.8
-    xs = [g.center[0] for g in EASY_COURSE]
-    assert xs == sorted(xs)
-    assert xs == [10.0, 20.0, 30.0]
-
-
-def test_gate_name_stable():
-    assert gate_name(0) == "gate_0"
-    assert gate_name(2) == "gate_2"
-    assert gate_name(31) == "gate_31"
-
-
-def test_schematic_renders_one_glb_per_gate():
-    s = schematic_for(EASY_COURSE)
-    assert s.count("object_3d") == len(EASY_COURSE)
-    assert s.count(f'glb path="{GATE_ASSET}"') == len(EASY_COURSE)
-    for g in EASY_COURSE:
-        ref = f"{gate_name(g.index)}.world_pos"
+def test_schematic_renders_one_glb_per_physical_gate():
+    c = _course()
+    s = schematic_for(c)
+    assert s.count(f'glb path="{GATE_ASSET}"') == len(c.gates) == 12
+    for g in c.gates:
+        ref = f"{entity_name(g.label)}.world_pos"
         assert s.count(ref) == 1, f"{ref} should appear exactly once"
+    for cone in c.cones:
+        assert f"{cone.label}.world_pos" in s
+
+
+def test_event_count_fits_component_slots():
+    c = _course()
+    assert c.total_events <= MAX_GATES
+
+
+def test_stacked_bodies_share_xy_and_split_z():
+    c = _course()
+    stacked = [g for g in c.gates if g.stacked_member]
+    assert len(stacked) == 2
+    a, b = stacked
+    assert math.hypot(a.x - b.x, a.y - b.y) < 1e-9
+    assert sorted([a.z, b.z]) == [1.35, 4.05]
+
+
+def test_print_summary_reports_dnf_and_complete():
+    c = _course()
+    tracker = RaceTracker(c)
+    line = print_summary(tracker, 12.0)
+    assert "DNF" in line and "gates_passed=0/24" in line

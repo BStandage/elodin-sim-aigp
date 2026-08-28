@@ -45,6 +45,7 @@ from sim.betaflight_bridge import (
 )
 from sim import camera as fpv_camera
 from sim import course as race_course
+from sim import pq_course
 from solver.api import RCCommand, SensorUpdate, fill_rc_channels
 
 
@@ -55,6 +56,10 @@ except AttributeError:
 
 
 config = DEFAULT_CONFIG
+# 2-lap PQ course: ~224 m of racing line. The reference waypoint pilot
+# laps in ~105 s, so 250 s covers 2 laps + margin; trim once faster
+# solvers exist.
+config.simulation_time = 250.0
 config.set_as_global()
 
 REPO_ROOT = _REPO_ROOT
@@ -84,8 +89,11 @@ if "--no-s10" not in sys.argv:
 
 world = el.World()
 
-# Active race course: straight ahead along ENU +X at hover altitude.
-ACTIVE_COURSE = race_course.EASY_COURSE
+# Active race course: the PQ course extracted from the overhead render,
+# loaded through the AI-GrandPrix map loader and expressed in the sim frame
+# (drone spawn = 3 m before g0 along its entry heading; see sim/pq_course.py).
+ACTIVE_COURSE = pq_course.load_course()
+pq_course.print_frame_report(ACTIVE_COURSE)
 
 drone = world.spawn(
     [
@@ -111,10 +119,11 @@ drone = world.spawn(
     name="drone",
 )
 
-# Spawn one static entity per gate so the schematic can bind `gate.glb` to
-# `gate_N.world_pos`. Must run before `world.schematic(...)` so the entity
-# names resolve when the schematic is registered.
+# Spawn one static entity per physical gate (stacked pair = two bodies) and
+# per cone so the schematic can bind visuals to their `world_pos`. Must run
+# before `world.schematic(...)` so the entity names resolve.
 gate_ids = race_course.spawn_gates(world, ACTIVE_COURSE)
+cone_ids = race_course.spawn_cones(world, ACTIVE_COURSE)
 
 # Attach a forward FPV camera matching the AI Grand Prix VADR-TS-002 spec.
 FPV_CAM_NAME = fpv_camera.register(world, drone)
@@ -234,10 +243,8 @@ _latest_frame_tick = [-1]
 _last_consumed_frame_tick = [-1]
 _warmup_done_tick = [-1]
 
-# Race state: tracked host-side across post_step calls
-_race_prev_pos = [None]          # previous tick's drone (x,y,z) for plane-crossing
-_race_last_gate = [-1]           # index of last gate passed
-_race_pass_times: list = [-1.0] * race_course.MAX_GATES
+# Race state: ordered 2-lap crossing tracker (host-side, elodin-free).
+_race_tracker = pq_course.RaceTracker(ACTIVE_COURSE)
 
 # Load the solver module (default: solver.baseline; override with RACE_SOLVER env var)
 _SOLVER_MODULE_NAME = os.environ.get("RACE_SOLVER", "solver.baseline")
@@ -393,10 +400,10 @@ def sitl_post_step(tick: int, ctx: el.StepContext):
         if tick > 200 and _fpv_frames[0] == 0:
             print(f"[FPV] collect error at tick {tick}: {e}")
 
+    # "gate" indices exposed to the solver are CROSSING-EVENT indices in the
+    # ordered 2-lap sequence (stacked gate = two events per lap).
     next_gate_index = (
-        _race_last_gate[0] + 1
-        if _race_last_gate[0] + 1 < len(ACTIVE_COURSE)
-        else -1
+        _race_tracker.event_idx if not _race_tracker.complete else -1
     )
     solver_update = SensorUpdate(
         t=t,
@@ -413,7 +420,7 @@ def sitl_post_step(tick: int, ctx: el.StepContext):
         mag_fresh=(tick % config.mag_tick_interval == 0),
         frame_rgba=_latest_frame[0],
         frame_fresh=(_latest_frame_tick[0] > _last_consumed_frame_tick[0]),
-        last_gate_passed=_race_last_gate[0],
+        last_gate_passed=_race_tracker.event_idx - 1,
         next_gate_index=next_gate_index,
     )
     try:
@@ -433,32 +440,27 @@ def sitl_post_step(tick: int, ctx: el.StepContext):
     except (IndexError, TypeError):
         curr_pos = (0.0, 0.0, 0.0)
 
-    if _race_prev_pos[0] is not None:
-        passed = race_course.detect_gate_pass(
-            ACTIVE_COURSE,
-            _race_last_gate[0],
-            _race_prev_pos[0],
-            curr_pos,
+    hit = _race_tracker.update(tick * config.dt, curr_pos)
+    if hit is not None:
+        event_idx = _race_tracker.event_idx - 1
+        lap = ACTIVE_COURSE.lap_of(event_idx)
+        t_pass = _race_tracker.event_times[-1]
+        print(
+            f"[GATE] lap {lap} {hit.label} (event {event_idx}) "
+            f"at t={t_pass:.2f}s z_opening={hit.z:.2f} "
+            f"pos=({curr_pos[0]:.2f},{curr_pos[1]:.2f},{curr_pos[2]:.2f})"
         )
-        if passed is not None:
-            _race_last_gate[0] = passed
-            t_pass = tick * config.dt
-            _race_pass_times[passed] = t_pass
-            print(
-                f"[GATE] passed gate {passed} at t={t_pass:.2f}s "
-                f"pos=({curr_pos[0]:.2f},{curr_pos[1]:.2f},{curr_pos[2]:.2f})"
+        try:
+            pass_times = np.full(race_course.MAX_GATES, -1.0)
+            n = min(len(_race_tracker.event_times), race_course.MAX_GATES)
+            pass_times[:n] = _race_tracker.event_times[:n]
+            ctx.write_component(
+                "drone.last_gate_passed",
+                np.array([float(event_idx)]),
             )
-            try:
-                pass_times = np.full(race_course.MAX_GATES, -1.0)
-                pass_times[: len(_race_pass_times)] = _race_pass_times
-                ctx.write_component(
-                    "drone.last_gate_passed",
-                    np.array([float(passed)]),
-                )
-                ctx.write_component("drone.gate_pass_times", pass_times)
-            except Exception:
-                pass
-    _race_prev_pos[0] = curr_pos
+            ctx.write_component("drone.gate_pass_times", pass_times)
+        except Exception:
+            pass
 
     # Print status every second
     if t - last_print[0] >= 1.0:
@@ -528,12 +530,10 @@ def sitl_post_step(tick: int, ctx: el.StepContext):
         else:
             print("WARNING: No motor response. Check Betaflight configuration.")
 
-        race_course.print_summary(
-            ACTIVE_COURSE,
-            _race_last_gate[0],
-            _race_pass_times,
-            s.sim_time,
-        )
+        race_course.print_summary(_race_tracker, s.sim_time)
+        record_path = next_filename("race_result_XXX") + ".json"
+        _race_tracker.write_record(record_path, s.sim_time)
+        print(f"[RACE] run record -> {record_path}")
 
 
 # Return the next non-existent filename with auto-incremented
