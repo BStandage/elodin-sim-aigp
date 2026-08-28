@@ -18,7 +18,9 @@ wsl -e bash -lc "pkill -f betaflight_SITL; pkill -f render-server; pkill -f 'elo
 timeout /t 1 /nobreak >nul
 
 echo Starting sim (RACE_SOLVER=%SOLVER%) in a WSL window...
-start "PQ race sim" wsl -e bash -lc "cd $(wslpath -a '%~dp0') && RACE_SOLVER=%SOLVER% ~/.local/bin/uv run -- ~/.cargo/bin/elodin run sim/main.py; echo; echo --- run ended, press Enter to close ---; read _"
+REM raceline.follower needs a plan (AIGP_TRAJ): hand it the newest one from
+REM the AI-GrandPrix repo, if any exist. Harmless for other solvers.
+start "PQ race sim" wsl -e bash -lc "cd $(wslpath -a '%~dp0') && T=$(ls -t $(wslpath -a '%~dp0')../AI-GrandPrix/out/plans/plan_*.json 2>/dev/null | head -1); [ -n \"$T\" ] && export AIGP_TRAJ=\"$T\" && echo Using plan: $T; RACE_SOLVER=%SOLVER% ~/.local/bin/uv run -- ~/.cargo/bin/elodin run sim/main.py; echo; echo --- run ended, press Enter to close ---; read _"
 
 REM Windows' localhost->WSL relay is flaky; talk to the WSL VM's IP directly.
 for /f "tokens=1" %%i in ('wsl hostname -I') do set "WSLIP=%%i"

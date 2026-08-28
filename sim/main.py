@@ -57,9 +57,9 @@ except AttributeError:
 
 config = DEFAULT_CONFIG
 # 2-lap PQ course: ~224 m of racing line. The reference waypoint pilot
-# laps in ~105 s, so 250 s covers 2 laps + margin; trim once faster
-# solvers exist.
-config.simulation_time = 250.0
+# laps in ~105 s, so 250 s covers 2 laps + margin; race.py sizes it from
+# the plan's predicted time via AIGP_SIM_TIME.
+config.simulation_time = float(os.environ.get("AIGP_SIM_TIME", "250.0"))
 config.set_as_global()
 
 REPO_ROOT = _REPO_ROOT
