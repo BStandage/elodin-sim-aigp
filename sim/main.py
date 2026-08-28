@@ -278,7 +278,10 @@ def sitl_post_step(tick: int, ctx: el.StepContext):
     # Lazy initialization - only start bridge when first tick runs
     if bridge[0] is None or not getattr(bridge[0], "_started", False):
         print("[SITL] Initializing bridge...")
-        pending_bridge = BetaflightSyncBridge(timeout_ms=100)
+        # 100ms dropped the whole tick exchange on WSL disk hiccups and let
+        # Betaflight drift from the sim at random moments (measured: same
+        # plan, wildly different outcomes). Wait out stalls instead.
+        pending_bridge = BetaflightSyncBridge(timeout_ms=1000)
         sensor_buf[0] = SensorDataBuffer()
         state[0] = SITLState()
         pending_bridge.start()
@@ -578,7 +581,11 @@ print(f"Writing database to: {db_filename}")
 world.run(
     system,
     simulation_rate=config.pid_rate,
-    generate_real_time=True,
+    # Real-time pacing let wall-clock stalls (WSL disk hiccups) skip ahead
+    # and hand the solver random 100ms+ control gaps mid-corner - measured
+    # as wildly varying outcomes for identical plans. Unpaced lockstep is
+    # deterministic; set AIGP_REALTIME=1 for editor sessions that want it.
+    generate_real_time=bool(int(os.environ.get("AIGP_REALTIME", "1"))),
     post_step=sitl_post_step,
     db_path=db_filename,
     start_timestamp=0,

@@ -79,7 +79,11 @@ class DroneConfig:
     motor_torque_coeff: float = 0.012
 
     # Linear drag coefficient [drag_x, drag_y, drag_z] in N/(m/s)
-    linear_drag: NDArray[np.float64] = field(default_factory=lambda: np.array([0.2, 0.2, 40.0]))
+    # z was 40.0 (100x the named presets below) - measured on 2026-08-28 it
+    # capped climb at 0.8 m/s AT FULL THROTTLE on a TWR-4.4 airframe. Brought
+    # in line with the presets; altitude-loop gains tuned under the old
+    # damping may need revisiting.
+    linear_drag: NDArray[np.float64] = field(default_factory=lambda: np.array([0.2, 0.2, 0.4]))
 
     # Rotational drag coefficient [drag_roll, drag_pitch, drag_yaw] in N*m/(rad/s)
     angular_drag: NDArray[np.float64] = field(default_factory=lambda: np.array([0.01, 0.01, 0.015]))
