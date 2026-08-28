@@ -1,128 +1,157 @@
-# AI Grand Prix Playground
+# AI Grand Prix Practice Sim — PQ fork
 
-An open-source, Elodin-based practice simulator for [Anduril's AI Grand Prix](https://www.theaigrandprix.com/), a $500K autonomous drone-racing competition. Built so contestants can iterate on perception, planning, and control code today, while the official Virtual Qualifier 1 simulator finishes baking.
+Fork of [elodin-sys/ai-grand-prix](https://github.com/elodin-sys/ai-grand-prix)
+carrying our September Physical Qualifier course and fixes. What's
+different from upstream:
+
+- **The extracted PQ course** replaces the 3-gate demo: 12 gates (incl.
+  the stacked double gate flown as an out-and-back), ordered 2-lap
+  scoring with machine-readable race records. Loaded from the
+  `AI-GrandPrix` repo's course map — no positions hardcoded here.
+- **Sensor-feed fixes**: the FDM gyro/accel frame conversions upstream
+  ships are wrong for `ENABLE_GAZEBO_BRIDGE` builds (inverted yaw rate,
+  inverted gravity — Betaflight's attitude estimator thought the quad was
+  upside-down). Fixed in `sim/sensors.py`.
+- **A reference pilot** (`solver/pq_waypoints.py`) that completes the
+  full 2-lap course 24/24 with the FPV camera flying nose-first.
+- **`run_race.cmd`** — double-click to race (starts the sim in WSL,
+  opens the Windows editor at the right moment).
 
 <p align="center">
   <img src="./drone_race_preview.gif" alt="AI Grand Prix demo flight" width="720">
 </p>
 
-What you get out of the box:
+## Setup
 
-- High-fidelity 6-DOF physics from [Elodin](https://github.com/elodin-sys/elodin) (deterministic, GPU-rendered, multi-rate sensors) around a generic 5-inch racing quad, our best public guess until the reference airframe is published.
-- A real **Betaflight SITL** flight controller in lockstep with the physics, talking standard MAVLink-style RC + PWM over UDP.
-- A forward FPV camera matching the AI Grand Prix tech-spec intrinsics (640×360, fx=fy=320, cx=320, cy=180, +20° up-tilt, 30 Hz).
-- A 3-gate forward course in Elodin's ENU frame (+X/East), with automatic pass-time tracking.
-- A clean [`solver/`](solver/) package. That's the only directory you edit to compete.
-
-## Quick start (macOS / Ubuntu / Windows WSL, ~5 minutes)
-
-You need `uv`, `git`, `git lfs` and a C toolchain for building Betaflight:
-
-On macOS install the Xcode Command Line Tools (`xcode-select --install`).
-
-On Windows:
-- open Powershell as admin
-- edit a new file with `notepad "$env:USERPROFILE\.wslconfig"`
-- set the wsl network config with:
-```bash
-[wsl2]
-networkingMode=mirrored
-```
-- and run `wsl --install`, which will start a new WSL distro
-
-On Ubuntu/WSL run:
-```bash
-sudo apt update && sudo apt -y install build-essential clang-18 libasound2t64 git-lfs curl
-```
-
-Finally install uv:
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-Clone this repository and then:
-
-```bash
-# 1) Install the Elodin CLI (editor + run + db)
-bash scripts/install_elodin.sh
-
-# 2) Set up the Python environment
-uv venv --python 3.13 && source .venv/bin/activate && uv sync
-
-# 3) Fetch and build Betaflight SITL (one-time)
-git submodule update --init --recursive --depth 1 betaflight
-bash scripts/build_betaflight.sh
-
-# 4) Configure Betaflight only if the committed eeprom.bin is missing or stale.
-#    This is normally a no-op for a fresh clone.
-uv run python scripts/configure_betaflight.py
-
-# 5a) on Mac / Ubuntu, open the simulation in the Elodin editor to start sim and connect editor directly
-elodin editor sim/main.py
-
-# 5b) start just the simulation in WSL
-elodin run sim/main.py
-# then open a new Powershell, download & install the Elodin windows release binary
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/elodin-sys/elodin/releases/download/v0.17.3/elodin-installer.sh | sh
-# clone the repo there as well, and run
-elodin.exe editor 127.0.0.1:2240
-```
-
-After `scripts/build_betaflight.sh`, `git status` may show `M betaflight`. That is expected: the build script toggles Betaflight's `target.h` inside the submodule to enable simulator lockstep.
-
-Expected output on a healthy run:
+**You need TWO repos side by side** — this one and
+[`AI-GrandPrix`](../AI-GrandPrix) (the course map, its loader, and the
+perception codebase live there):
 
 ```text
-[SOLVER] using module: solver.baseline
-[FPV] First frame at tick 33: 921600 bytes, shape=(360, 640, 4)
-SUCCESS: SITL integration working! Drone took off!
-[RACE] course=easy gates_passed=0/3 lap_time=15.00s status=DNF pass_times=[--,--,--]
+GitRepos/
+├── AI-GrandPrix/        <- course map + loader (+ your perception work)
+└── elodin-sim-aigp/     <- this repo
 ```
+
+### Windows (the common case)
+
+1. **Install WSL** — admin PowerShell: `wsl --install`, reboot, set a
+   Linux username/password. If WSL is already installed, check
+   `wsl uname -r`: anything below **5.10** must be updated
+   (`wsl --update --web-download` then `wsl --shutdown`, as admin) or the
+   sim dies at startup with an io_uring panic.
+2. **One apt line** — in WSL:
+   ```bash
+   sudo apt update && sudo apt install -y build-essential libasound2t64 git curl
+   ```
+3. **Everything else is scripted** — in WSL, from this repo:
+   ```bash
+   bash scripts/setup_wsl.sh
+   ```
+   Installs uv + the Python env (pinned to 3.13 — elodin breaks on 3.14),
+   the Elodin CLI, fetches and builds Betaflight SITL, checks for the
+   companion repo, and finishes by running the test suite. Re-run it any
+   time as an environment health check.
+4. **Windows-side editor** (one-time, PowerShell):
+   ```powershell
+   [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+   $dst = "$env:LOCALAPPDATA\Programs\elodin"; New-Item -ItemType Directory -Force $dst
+   Invoke-WebRequest https://github.com/elodin-sys/elodin/releases/download/v0.17.3/elodin-x86_64-pc-windows-msvc.zip -OutFile $env:TEMP\elodin.zip -UseBasicParsing
+   Expand-Archive $env:TEMP\elodin.zip -DestinationPath $dst -Force
+   ```
+   **Windows 10 only:** the editor crashes on a missing Windows 11 font.
+   Download the free pack from https://aka.ms/SegoeFluentIcons, extract,
+   then as admin:
+   `Copy-Item ".\Segoe Fluent Icons.ttf" "C:\Windows\Fonts\SegoeIcons.ttf"`
+
+### macOS / native Linux
+
+No WSL layer — follow upstream's short path: the apt/xcode line, `uv`,
+`bash scripts/install_elodin.sh`, `uv sync`,
+`bash scripts/fetch_betaflight.sh && bash scripts/build_betaflight.sh`,
+then `elodin editor sim/main.py` directly.
+
+## Racing
+
+**Double-click `run_race.cmd`.** It cleans stale processes, starts the
+sim in a WSL window, waits for the render server, and opens the editor
+connected to the WSL VM's IP (Windows' localhost relay to WSL is flaky —
+if connecting by hand, use `wsl hostname -I` instead of 127.0.0.1).
+
+Manual equivalent:
+
+```bash
+# WSL terminal — run the race headless
+RACE_SOLVER=solver.pq_waypoints uv run -- elodin run sim/main.py
+```
+```powershell
+# PowerShell — watch it live
+& "$env:LOCALAPPDATA\Programs\elodin\elodin.exe" editor <wsl-ip>:2240
+```
+
+Healthy output ends like:
+
+```text
+[GATE] lap 1 g10-low (event 23) at t=225.30s z_opening=1.35 ...
+[RACE] course=course_map.json (estimated_from_overhead_image) laps=2
+       gates_passed=24/24 total_time=225.30s lap_times=[114.70,110.60]
+       status=COMPLETE near_misses=0
+[RACE] run record -> race_result_000.json
+```
+
+The `m betaflight` line `git status` shows after building is expected
+(the build script toggles lockstep in the submodule) — don't commit it.
 
 ## Writing your solver
 
-Edit [`solver/baseline.py`](solver/baseline.py) or point at your own module:
+One function: `autopilot(update: SensorUpdate) -> RCCommand` — the
+contract is in [`solver/README.md`](solver/README.md). Select yours with:
 
 ```bash
-RACE_SOLVER=my_team.my_solver elodin editor sim/main.py
+RACE_SOLVER=my_module uv run -- elodin run sim/main.py
 ```
 
-The full contract (one `autopilot(update: SensorUpdate) -> RCCommand` function) is in [`solver/README.md`](solver/README.md).
+Modules under `AI-GrandPrix/src` are importable too (the sim puts that
+tree on `sys.path`), so a solver can live in the main repo:
+`RACE_SOLVER=pilots.my_pilot`. Start from `solver/pq_waypoints.py` — and
+note `last_gate_passed` / `next_gate_index` are **crossing-event indices**
+(0–23 over 2 laps; the stacked gate is two events per lap).
+`solver/diag_steps.py` is a plant-measurement pilot (hover + stick step
+responses) — useful before trusting any new control code.
 
 ## Inspecting a run
 
-Each run writes an auto-numbered `betaflight_db###` directory at the repo root (set `ELODIN_DB_PATH` to override). A couple of `elodin-db` commands you'll reach for after a run:
+Each run writes `race_result_###.json` (per-event times, lap times,
+near-misses) and an auto-numbered `betaflight_db###` database:
 
 ```bash
-# Dump every committed component to flat, joined CSVs (one row per tick).
-elodin-db export betaflight_db000 --format csv --flatten --join -o dbs/betaflight_db000-csv
-
-# Render the FPV camera stream to a video file for offline inspection.
-elodin-db export-videos betaflight_db000 -o betaflight_db000-video
+elodin-db export betaflight_db000 --format csv --flatten --join -o dbs/db000-csv
+elodin-db export-videos betaflight_db000 -o db000-video   # FPV as video
 ```
 
-The CSV form is convenient for regression diffs, offline plotting, or pulling state into a notebook. For lighter-weight queries on individual components without writing files, `elodin-db query --eql ...` hits the same DB; see [`ARCHITECTURE.md`](ARCHITECTURE.md#determinism-timing-and-tests) for the syntax.
-
-## Running tests
+## Tests
 
 ```bash
-just test     # or: uv run pytest
-just verify   # check the latest run log for a successful takeoff
-just clean    # remove betaflight_db### directories and CSV/video exports
+uv run pytest                          # full suite (49)
+python tests/test_pq_course.py         # course/tracker only, no elodin needed
+uv run python scripts/smoke_world.py   # world construction, no Betaflight
+uv run python scripts/render_pq_course.py  # top-down course render -> out/
 ```
-
-36 tests across packet round-trips, course geometry, camera intrinsics, and the baseline solver. All run in well under a second (no Elodin runtime needed).
 
 ## Going deeper
 
-- [`ARCHITECTURE.md`](ARCHITECTURE.md): full design covering the lockstep cycle, coordinate frames, module reference, editor schematic, configuration knobs, and known opportunities for improvement.
-- [`solver/README.md`](solver/README.md): the autopilot contract.
-- The Elodin engine, editor, and Python bindings live at [`elodin-sys/elodin`](https://github.com/elodin-sys/elodin); read its README for the full surface area, including the `sensor_camera` and `StepContext` APIs we lean on here.
+- `AI-GrandPrix/docs/ELODIN_SIM_SETUP.md` — the long-form setup
+  walkthrough with every failure mode we hit and its fix.
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) — upstream's design doc (lockstep
+  cycle, frames, schematic). Still accurate apart from the course.
+- [`solver/README.md`](solver/README.md) — the autopilot contract.
 
 ## Acknowledgements
 
-Built on top of the upstream [`elodin-sys/elodin/examples/betaflight-sitl`](https://github.com/elodin-sys/elodin/tree/main/examples/betaflight-sitl), [`examples/sensor-camera`](https://github.com/elodin-sys/elodin/tree/main/examples/sensor-camera), and [`examples/crazyflie-edu`](https://github.com/elodin-sys/elodin/tree/main/examples/crazyflie-edu) examples. Not affiliated with Anduril, DCL, Neros, or JobsOhio. The AI Grand Prix is theirs; this practice rig is community fan-art so contestants can start hacking now.
+Forked from [`elodin-sys/ai-grand-prix`](https://github.com/elodin-sys/ai-grand-prix),
+itself built on the Elodin examples. Not affiliated with Anduril, DCL,
+Neros, or JobsOhio.
 
 ## License
 
-[Apache 2.0](LICENSE), the same license as the upstream [Elodin engine](https://github.com/elodin-sys/elodin).
+[Apache 2.0](LICENSE), same as upstream.
