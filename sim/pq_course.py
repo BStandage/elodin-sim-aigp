@@ -169,6 +169,8 @@ class RaceCourse:
 
 # Cone geometry is NOT in the map (heights unknown). Conservative defaults;
 # override via env or load_course kwargs.
+# Drone body radius for gate-frame contact (props included).
+DRONE_RADIUS_M = float(os.environ.get("AIGP_DRONE_RADIUS_M", "0.15"))
 CONE_RADIUS_M = float(os.environ.get("AIGP_CONE_RADIUS_M", "0.4"))
 CONE_HEIGHT_M = float(os.environ.get("AIGP_CONE_HEIGHT_M", "1.5"))
 
@@ -285,6 +287,39 @@ def crossing_hit(
     return True
 
 
+def gate_frame_hit(g: SimGate, pos: Sequence[float],
+                   r: float = None) -> bool:
+    """Is the drone (radius r) touching this gate's physical FRAME?
+
+    Frame = the 2.7 m outer square minus the 1.5 m opening, 0.26 m deep,
+    in the gate's own axes (bar axis / opening normal / vertical)."""
+    r = DRONE_RADIUS_M if r is None else r
+    dx = pos[0] - g.x
+    dy = pos[1] - g.y
+    nx, ny = math.cos(g.heading_rad), math.sin(g.heading_rad)
+    depth = dx * nx + dy * ny                     # along opening normal
+    lateral = -dx * ny + dy * nx                  # along bar axis
+    dz = pos[2] - g.z
+    half_out = GATE_OUTER_M / 2.0
+    if abs(depth) > GATE_DEPTH_M / 2.0 + r:
+        return False
+    if abs(lateral) > half_out + r or abs(dz) > half_out + r:
+        return False                              # outside the outer square
+    if (abs(lateral) <= OPENING_HALF_M - r
+            and abs(dz) <= OPENING_HALF_M - r):
+        return False                              # cleanly inside the hole
+    return True                                   # in the frame material
+
+
+@dataclass
+class GateContact:
+    t: float
+    gate: str
+    x: float
+    y: float
+    z: float
+
+
 @dataclass
 class NearMiss:
     t: float
@@ -308,6 +343,8 @@ class RaceTracker:
         self.event_times: List[float] = []       # time per completed event
         self.lap_times: List[float] = []         # cumulative time per lap
         self.near_misses: List[NearMiss] = []
+        self.gate_contacts: List[GateContact] = []
+        self.crashed = False
         self._prev: Optional[Tuple[float, float, float]] = None
         self._near_active: Dict[str, bool] = {}
 
@@ -332,7 +369,18 @@ class RaceTracker:
     def update(self, t: float, pos: Sequence[float]) -> Optional[Crossing]:
         p = (float(pos[0]), float(pos[1]), float(pos[2]))
         hit: Optional[Crossing] = None
-        if self._prev is not None and not self.complete:
+        # Physical contact with any gate frame = crash: scoring freezes and
+        # the run record is marked invalid (a clipped gate must never pass
+        # as a clean lap - it would be a real-world DQ/crash).
+        if not self.crashed:
+            for g in self.course.gates:
+                if gate_frame_hit(g, p):
+                    self.crashed = True
+                    self.gate_contacts.append(
+                        GateContact(t, g.label, p[0], p[1], p[2]))
+                    break
+        if (self._prev is not None and not self.complete
+                and not self.crashed):
             c = self.course.event(self.event_idx)
             if crossing_hit(c, self._prev, p):
                 hit = c
@@ -379,7 +427,13 @@ class RaceTracker:
             "crossings_per_lap": per_lap,
             "events_total": self.course.total_events,
             "gates_passed": self.gates_passed,
-            "complete": self.complete,
+            "complete": self.complete and not self.crashed,
+            "crashed": self.crashed,
+            "gate_contacts": [
+                {"t": round(c.t, 3), "gate": c.gate,
+                 "pos": [round(c.x, 2), round(c.y, 2), round(c.z, 2)]}
+                for c in self.gate_contacts
+            ],
             "total_time_s": round(
                 self.event_times[-1], 4) if self.complete else None,
             "final_t_s": round(final_t, 4),

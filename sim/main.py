@@ -99,7 +99,7 @@ world = el.World()
 # loaded through the AI-GrandPrix map loader and expressed in the sim frame
 # (drone spawn = 3 m before g0 along its entry heading; see sim/pq_course.py).
 ACTIVE_COURSE = pq_course.load_course(
-    laps=int(os.environ.get("AIGP_LAPS", "2"))
+    laps=int(os.environ.get("AIGP_LAPS", "1"))
 )
 pq_course.print_frame_report(ACTIVE_COURSE)
 
@@ -459,7 +459,13 @@ def sitl_post_step(tick: int, ctx: el.StepContext):
     except (IndexError, TypeError):
         curr_pos = (0.0, 0.0, 0.0)
 
+    _was_crashed = _race_tracker.crashed
     hit = _race_tracker.update(tick * config.dt, curr_pos)
+    if _race_tracker.crashed and not _was_crashed:
+        c = _race_tracker.gate_contacts[-1]
+        print(f"[CRASH] hit {c.gate} frame at t={c.t:.2f}s "
+              f"pos=({c.x:.2f},{c.y:.2f},{c.z:.2f}) - run INVALID, "
+              f"scoring frozen")
     if hit is not None:
         event_idx = _race_tracker.event_idx - 1
         lap = ACTIVE_COURSE.lap_of(event_idx)
