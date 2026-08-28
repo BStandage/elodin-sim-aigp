@@ -436,22 +436,35 @@ def build_fdm_from_components(
     #
     # Accelerometer: We want [FLU_x, -FLU_y, -FLU_z] after BF negates all.
     #   Send [-FLU_x, FLU_y, FLU_z] → BF gets [FLU_x, -FLU_y, -FLU_z] ✓
+    # The compiled SITL has ENABLE_GAZEBO_BRIDGE=1 (target.h default): the
+    # packet must carry FRD *sensor-frame* values. BF then negates all accel
+    # axes internally, so a correct FRD packet (ax, -ay, -az) yields +1g on
+    # BF's Z at level. (The previous mapping sent the exact negative — BF
+    # read -1g and its attitude estimator believed the quad was inverted,
+    # which is why ANGLE mode diverged. Fixed 2026-08-27.)
     accel_ned = np.array(
         [
-            -accel_enu[0],  # BF: -(-X) = X
-            accel_enu[1],  # BF: -Y
-            accel_enu[2],  # BF: -Z
+            accel_enu[0],   # FRD x = FLU x
+            -accel_enu[1],  # FRD y = -FLU y
+            -accel_enu[2],  # FRD z = -FLU z
         ]
     )
 
-    # Gyroscope: latest Betaflight's Gazebo bridge negates packet pitch
-    # internally (virtualGyro Y = -packet Y). Pre-negate Elodin pitch so BF's
-    # internal rate matches the physical pitch-rate sign for damping.
+    # Gyroscope: with ENABLE_GAZEBO_BRIDGE=1 the packet must be FRD rates;
+    # BF applies (keep X, negate Y, keep Z) to land on its roll-right /
+    # nose-down / yaw-CW conventions. FLU -> FRD = (wx, -wy, -wz).
+    # (The previous mapping sent +wz — an inverted YAW rate feedback that
+    # made BF's yaw loop unstable: permanent ~1.5 rad/s wobble, airmode
+    # mixing lift, uncontrollable altitude. Fixed 2026-08-27.)
+    # NOTE on yaw: pure FLU->FRD says send -wz, but with -wz the compiled
+    # SITL winds up a permanent max yaw differential (BR+FL pinned high,
+    # FR+BL at floor) — its perceived yaw rate fights the physics. +wz
+    # (the original mapping) is the empirically stable sign on this build.
     gyro_ned = np.array(
         [
-            gyro_enu[0],  # Roll: correct sign
-            -gyro_enu[1],  # Pitch: BF negates internally
-            gyro_enu[2],  # Yaw: BF negates to get -Z
+            gyro_enu[0],   # FRD x = FLU x
+            -gyro_enu[1],  # FRD y = -FLU y
+            gyro_enu[2],   # yaw: +wz (see note)
         ]
     )
 
