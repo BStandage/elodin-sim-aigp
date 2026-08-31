@@ -125,10 +125,17 @@ Notes:
 
 ### macOS / native Linux
 
-No WSL layer. Follow upstream's short path: the apt/xcode line, `uv`,
-`bash scripts/install_elodin.sh`, `uv sync`,
+Use the Docker path above - on a Mac it is the supported route (one
+install, no toolchain), and the native editor still attaches at
+localhost:2240 for watching.
+
+Native setup on macOS/Linux is possible but is the advanced path: the
+apt/xcode line, `uv`, `bash scripts/install_elodin.sh`, `uv sync`,
 `bash scripts/fetch_betaflight.sh && bash scripts/build_betaflight.sh`,
-then `elodin editor sim/main.py` directly.
+then `elodin editor sim/main.py`. If `build_betaflight.sh` fails on your
+machine, that is the signal to use Docker, not a bug in your clone -
+every `... elodin run sim/main.py` command in this README assumes this
+full native build exists.
 
 ## Racing
 
@@ -141,11 +148,12 @@ instead of a container. It connects to the WSL VM's IP because Windows'
 localhost relay to WSL is flaky (connecting by hand, use
 `wsl hostname -I`, not 127.0.0.1).
 
-Manual equivalent:
+Manual equivalent (needs the full native/WSL setup - with Docker only,
+use `docker compose up` instead):
 
 ```bash
 # WSL terminal: run the race headless
-RACE_SOLVER=solver.pq_waypoints uv run -- elodin run sim/main.py
+RACE_SOLVER=solvers.follower uv run -- elodin run sim/main.py
 ```
 ```powershell
 # PowerShell: watch it live
