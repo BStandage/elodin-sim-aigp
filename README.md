@@ -1,4 +1,4 @@
-# AI Grand Prix Practice Sim — PQ fork
+# AI Grand Prix Practice Sim (PQ fork)
 
 Fork of [elodin-sys/ai-grand-prix](https://github.com/elodin-sys/ai-grand-prix)
 carrying our September Physical Qualifier course and fixes. What's
@@ -7,14 +7,14 @@ different from upstream:
 - **The extracted PQ course** replaces the 3-gate demo: 12 gates (incl.
   the stacked double gate flown as an out-and-back), ordered 2-lap
   scoring with machine-readable race records. Loaded from the
-  `AI-GrandPrix` repo's course map — no positions hardcoded here.
+  `AI-GrandPrix` repo's course map. No positions are hardcoded here.
 - **Sensor-feed fixes**: the FDM gyro/accel frame conversions upstream
   ships are wrong for `ENABLE_GAZEBO_BRIDGE` builds (inverted yaw rate,
-  inverted gravity — Betaflight's attitude estimator thought the quad was
+  inverted gravity, so Betaflight's attitude estimator thought the quad was
   upside-down). Fixed in `sim/sensors.py`.
 - **A reference pilot** (`solver/pq_waypoints.py`) that completes the
   full 2-lap course 24/24 with the FPV camera flying nose-first.
-- **Double-click to race** — `run_race_docker.cmd` (containerized, any
+- **Double-click to race**: `run_race_docker.cmd` (containerized, any
   platform) or `run_race.cmd` (native WSL). Each starts the sim and
   opens the editor on it at the right moment.
 
@@ -24,20 +24,20 @@ different from upstream:
 
 ## Setup
 
-**You need TWO repos side by side** — this one and
+**You need TWO repos side by side**: this one and
 [`AI-GrandPrix`](../AI-GrandPrix) (the course map, its loader, and the
 perception codebase live there):
 
 ```text
 GitRepos/
-├── AI-GrandPrix/        <- course map + loader (+ your perception work)
+├── AI-GrandPrix/        <- course map + loader
 └── elodin-sim-aigp/     <- this repo
 ```
 
-### Docker (recommended — any platform)
+### Docker (recommended, any platform)
 
-The whole Linux half of the setup — toolchain, Elodin CLI, Python env,
-Betaflight SITL build — lives in one container. No WSL, no apt, no uv,
+The whole Linux half of the setup (toolchain, Elodin CLI, Python env,
+Betaflight SITL build) lives in one container. No WSL, no apt, no uv,
 no Betaflight build by hand.
 
 **Fresh machine, start to finish:**
@@ -45,15 +45,15 @@ no Betaflight build by hand.
 1. Install [Docker Desktop](https://www.docker.com/products/docker-desktop/),
    launch it once, accept the license.
 2. Install [Git LFS](https://git-lfs.com), then `git lfs install`. The
-   `.glb` models are LFS-backed — without it the editor shows no drone
+   `.glb` models are LFS-backed. Without it the editor shows no drone
    and no gates.
 3. Clone **both** repos side by side (layout above).
 4. Race: double-click `run_race_docker.cmd` (Windows) or run
    `./run_race_docker.sh` (macOS/Linux).
 
 That's it. The launcher preflights the rest and stops with a fix-it
-message if anything's missing — and downloads the native Elodin editor
-for you on first run. Budget ~10 minutes the first time (image + SITL
+message if anything is missing. It also downloads the native Elodin
+editor on first run. Budget ~10 minutes the first time (image + SITL
 build); after that it starts in seconds.
 
 Both launchers take an optional solver module:
@@ -73,8 +73,8 @@ Docker publishes 2240 on localhost, so there's no WSL-IP dance. Race
 knobs pass through:
 `RACE_SOLVER=solver.baseline AIGP_SIM_TIME=60 docker compose up`. Run
 artifacts (`race_result_###.json`, `betaflight_db###`) land in the repo
-on the host as usual. There's a `.devcontainer/` too if you'd rather
-open the repo in VS Code and have it all wired up.
+on the host as usual. A `.devcontainer/` is included for opening the
+repo in VS Code with everything wired up.
 
 Notes:
 - The container runs `seccomp:unconfined` because Elodin needs
@@ -83,31 +83,31 @@ Notes:
   image runs emulated. In Docker Desktop enable *Settings → Use Rosetta
   for x86_64/amd64 emulation* first; expect slower-than-realtime sims.
 - **Windows 10:** the editor needs the SegoeIcons font or it crashes;
-  the launcher warns you with the fix (see step 4 of the WSL setup).
+  the launcher warns with the fix (see step 4 of the WSL setup).
 - **FPV camera: unconfirmed in the container.** A headless container run
   reported `FPV frames: 0`. It is not yet established whether that is a
   software-rendering limitation (no GPU) or simply what headless
-  `elodin run` does with no editor attached — the WSL path has not been
+  `elodin run` does with no editor attached. The WSL path has not been
   measured for comparison. Physics, Betaflight lockstep and gate scoring
-  are unaffected. Assume vision-based solvers are unverified here until
-  someone checks.
+  are unaffected. Vision-based solvers are unverified in the container
+  until this is measured.
 
 ### Windows + WSL (native, no Docker)
 
-1. **Install WSL** — admin PowerShell: `wsl --install`, reboot, set a
+1. **Install WSL**: admin PowerShell: `wsl --install`, reboot, set a
    Linux username/password. If WSL is already installed, check
    `wsl uname -r`: anything below **5.10** must be updated
    (`wsl --update --web-download` then `wsl --shutdown`, as admin) or the
    sim dies at startup with an io_uring panic.
-2. **One apt line** — in WSL:
+2. **One apt line**, in WSL:
    ```bash
    sudo apt update && sudo apt install -y build-essential libasound2t64 git curl
    ```
-3. **Everything else is scripted** — in WSL, from this repo:
+3. **Everything else is scripted**, in WSL, from this repo:
    ```bash
    bash scripts/setup_wsl.sh
    ```
-   Installs uv + the Python env (pinned to 3.13 — elodin breaks on 3.14),
+   Installs uv + the Python env (pinned to 3.13; elodin breaks on 3.14),
    the Elodin CLI, fetches and builds Betaflight SITL, checks for the
    companion repo, and finishes by running the test suite. Re-run it any
    time as an environment health check.
@@ -125,7 +125,7 @@ Notes:
 
 ### macOS / native Linux
 
-No WSL layer — follow upstream's short path: the apt/xcode line, `uv`,
+No WSL layer. Follow upstream's short path: the apt/xcode line, `uv`,
 `bash scripts/install_elodin.sh`, `uv sync`,
 `bash scripts/fetch_betaflight.sh && bash scripts/build_betaflight.sh`,
 then `elodin editor sim/main.py` directly.
@@ -134,9 +134,9 @@ then `elodin editor sim/main.py` directly.
 
 **Double-click `run_race_docker.cmd`** (or `./run_race_docker.sh` on
 macOS/Linux). It tears down any previous container, starts the sim,
-waits for the render server, and opens your native editor on it.
+waits for the render server, and opens the native editor on it.
 
-On the native WSL setup use `run_race.cmd` instead — same flow, WSL
+On the native WSL setup use `run_race.cmd` instead: same flow, WSL
 instead of a container. It connects to the WSL VM's IP because Windows'
 localhost relay to WSL is flaky (connecting by hand, use
 `wsl hostname -I`, not 127.0.0.1).
@@ -144,11 +144,11 @@ localhost relay to WSL is flaky (connecting by hand, use
 Manual equivalent:
 
 ```bash
-# WSL terminal — run the race headless
+# WSL terminal: run the race headless
 RACE_SOLVER=solver.pq_waypoints uv run -- elodin run sim/main.py
 ```
 ```powershell
-# PowerShell — watch it live
+# PowerShell: watch it live
 & "$env:LOCALAPPDATA\Programs\elodin\elodin.exe" editor <wsl-ip>:2240
 ```
 
@@ -163,11 +163,11 @@ Healthy output ends like:
 ```
 
 The `m betaflight` line `git status` shows after building is expected
-(the build script toggles lockstep in the submodule) — don't commit it.
+(the build script toggles lockstep in the submodule). Don't commit it.
 
 ## Writing your solver
 
-One function: `autopilot(update: SensorUpdate) -> RCCommand` — the
+One function: `autopilot(update: SensorUpdate) -> RCCommand`. The
 contract is in [`solver/README.md`](solver/README.md). Select yours with:
 
 ```bash
@@ -176,11 +176,11 @@ RACE_SOLVER=my_module uv run -- elodin run sim/main.py
 
 Modules under `AI-GrandPrix/src` are importable too (the sim puts that
 tree on `sys.path`), so a solver can live in the main repo:
-`RACE_SOLVER=pilots.my_pilot`. Start from `solver/pq_waypoints.py` — and
+`RACE_SOLVER=pilots.my_pilot`. Start from `solver/pq_waypoints.py`, and
 note `last_gate_passed` / `next_gate_index` are **crossing-event indices**
 (0–23 over 2 laps; the stacked gate is two events per lap).
 `solver/diag_steps.py` is a plant-measurement pilot (hover + stick step
-responses) — useful before trusting any new control code.
+responses). Useful before trusting any new control code.
 
 ## Inspecting a run
 
@@ -203,11 +203,11 @@ uv run python scripts/render_pq_course.py  # top-down course render -> out/
 
 ## Going deeper
 
-- `AI-GrandPrix/docs/ELODIN_SIM_SETUP.md` — the long-form setup
+- `AI-GrandPrix/docs/ELODIN_SIM_SETUP.md`: the long-form setup
   walkthrough with every failure mode we hit and its fix.
-- [`ARCHITECTURE.md`](ARCHITECTURE.md) — upstream's design doc (lockstep
+- [`ARCHITECTURE.md`](ARCHITECTURE.md): upstream's design doc (lockstep
   cycle, frames, schematic). Still accurate apart from the course.
-- [`solver/README.md`](solver/README.md) — the autopilot contract.
+- [`solver/README.md`](solver/README.md): the autopilot contract.
 
 ## Acknowledgements
 
