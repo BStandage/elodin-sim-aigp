@@ -1,0 +1,8 @@
+# The repo is bind-mounted at runtime; the image only needs the files
+# the Dockerfile COPYs. Keep the build context tiny (whitelist style).
+*
+!pyproject.toml
+!uv.lock
+!.python-version
+!scripts/install_elodin.sh
+!docker/entrypoint.sh

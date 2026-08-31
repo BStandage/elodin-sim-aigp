@@ -1,0 +1,16 @@
+{
+  "name": "elodin-sim-aigp",
+  "dockerComposeFile": ["../docker-compose.yml"],
+  "service": "sim",
+  "workspaceFolder": "/work/elodin-sim-aigp",
+  "overrideCommand": true,
+  "forwardPorts": [2240],
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-python.python"],
+      "settings": {
+        "python.defaultInterpreterPath": "/opt/venv/bin/python"
+      }
+    }
+  }
+}

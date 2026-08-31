@@ -1,0 +1,51 @@
+# One-command sim environment:
+#
+#     docker compose up --build         # headless race (RACE_SOLVER, default solvers.follower)
+#     docker compose run --rm sim bash  # shell inside the environment (tests, scripts)
+#
+# Watch a run live with the NATIVE editor for your platform, pointed at
+# localhost:2240 (no WSL-IP dance needed — Docker publishes the port):
+#     elodin editor localhost:2240
+#
+# Override race knobs per-run, e.g.:
+#     RACE_SOLVER=solver.baseline AIGP_SIM_TIME=60 docker compose up
+
+services:
+  sim:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: elodin-sim-aigp
+    # Elodin ships x86_64 Linux binaries only. Apple Silicon Macs run this
+    # under emulation: Docker Desktop -> Settings -> "Use Rosetta for
+    # x86_64/amd64 emulation" (much faster than QEMU).
+    platform: linux/amd64
+    # Elodin hard-requires io_uring (the README's kernel>=5.10 note);
+    # Docker's default seccomp profile blocks the io_uring syscalls.
+    security_opt:
+      - seccomp:unconfined
+    ports:
+      - "2240:2240"    # Elodin render server (editor connects here)
+      # - "5761:5761"  # uncomment for Betaflight Configurator (app.betaflight.com -> TCP)
+    environment:
+      RACE_SOLVER: ${RACE_SOLVER:-solvers.follower}
+      AIGP_SIM_TIME: ${AIGP_SIM_TIME:-250.0}
+      AIGP_LAPS: ${AIGP_LAPS:-1}
+      AIGP_REALTIME: ${AIGP_REALTIME:-1}
+    volumes:
+      # Both repos live on the host, side by side, exactly like the
+      # WSL/native setup — edit solver code on the host, run in here.
+      - .:/work/elodin-sim-aigp
+      - ../AI-GrandPrix:/work/AI-GrandPrix
+      # Python env + uv cache on fast VM disk (a venv on a Windows/Mac
+      # bind mount is slow and symlink-hostile). Seeded from the image.
+      - venv:/opt/venv
+      - uv-cache:/root/.cache/uv
+      # Betaflight build artifacts stay off the host repo and survive
+      # container recreation (first run builds SITL once, ~2-5 min).
+      - bf-build:/work/elodin-sim-aigp/betaflight/obj
+
+volumes:
+  venv:
+  uv-cache:
+  bf-build:

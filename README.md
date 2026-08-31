@@ -14,8 +14,9 @@ different from upstream:
   upside-down). Fixed in `sim/sensors.py`.
 - **A reference pilot** (`solver/pq_waypoints.py`) that completes the
   full 2-lap course 24/24 with the FPV camera flying nose-first.
-- **`run_race.cmd`** — double-click to race (starts the sim in WSL,
-  opens the Windows editor at the right moment).
+- **Double-click to race** — `run_race_docker.cmd` (containerized, any
+  platform) or `run_race.cmd` (native WSL). Each starts the sim and
+  opens the editor on it at the right moment.
 
 <p align="center">
   <img src="./drone_race_preview.gif" alt="AI Grand Prix demo flight" width="720">
@@ -33,7 +34,65 @@ GitRepos/
 └── elodin-sim-aigp/     <- this repo
 ```
 
-### Windows (the common case)
+### Docker (recommended — any platform)
+
+The whole Linux half of the setup — toolchain, Elodin CLI, Python env,
+Betaflight SITL build — lives in one container. No WSL, no apt, no uv,
+no Betaflight build by hand.
+
+**Fresh machine, start to finish:**
+
+1. Install [Docker Desktop](https://www.docker.com/products/docker-desktop/),
+   launch it once, accept the license.
+2. Install [Git LFS](https://git-lfs.com), then `git lfs install`. The
+   `.glb` models are LFS-backed — without it the editor shows no drone
+   and no gates.
+3. Clone **both** repos side by side (layout above).
+4. Race: double-click `run_race_docker.cmd` (Windows) or run
+   `./run_race_docker.sh` (macOS/Linux).
+
+That's it. The launcher preflights the rest and stops with a fix-it
+message if anything's missing — and downloads the native Elodin editor
+for you on first run. Budget ~10 minutes the first time (image + SITL
+build); after that it starts in seconds.
+
+Both launchers take an optional solver module:
+`run_race_docker.cmd solver.pq_waypoints`. On macOS,
+`cp run_race_docker.sh run_race_docker.command` makes it double-clickable
+too.
+
+Manual equivalents:
+
+```bash
+docker compose up --build          # headless race (builds SITL on first run)
+docker compose run --rm sim bash   # shell in the environment (uv run pytest, etc.)
+elodin editor localhost:2240       # native editor, attach to a running sim
+```
+
+Docker publishes 2240 on localhost, so there's no WSL-IP dance. Race
+knobs pass through:
+`RACE_SOLVER=solver.baseline AIGP_SIM_TIME=60 docker compose up`. Run
+artifacts (`race_result_###.json`, `betaflight_db###`) land in the repo
+on the host as usual. There's a `.devcontainer/` too if you'd rather
+open the repo in VS Code and have it all wired up.
+
+Notes:
+- The container runs `seccomp:unconfined` because Elodin needs
+  io_uring, which Docker's default seccomp profile blocks.
+- **Apple Silicon:** Elodin ships x86_64 Linux binaries only, so the
+  image runs emulated. In Docker Desktop enable *Settings → Use Rosetta
+  for x86_64/amd64 emulation* first; expect slower-than-realtime sims.
+- **Windows 10:** the editor needs the SegoeIcons font or it crashes;
+  the launcher warns you with the fix (see step 4 of the WSL setup).
+- **FPV camera: unconfirmed in the container.** A headless container run
+  reported `FPV frames: 0`. It is not yet established whether that is a
+  software-rendering limitation (no GPU) or simply what headless
+  `elodin run` does with no editor attached — the WSL path has not been
+  measured for comparison. Physics, Betaflight lockstep and gate scoring
+  are unaffected. Assume vision-based solvers are unverified here until
+  someone checks.
+
+### Windows + WSL (native, no Docker)
 
 1. **Install WSL** — admin PowerShell: `wsl --install`, reboot, set a
    Linux username/password. If WSL is already installed, check
@@ -73,10 +132,14 @@ then `elodin editor sim/main.py` directly.
 
 ## Racing
 
-**Double-click `run_race.cmd`.** It cleans stale processes, starts the
-sim in a WSL window, waits for the render server, and opens the editor
-connected to the WSL VM's IP (Windows' localhost relay to WSL is flaky —
-if connecting by hand, use `wsl hostname -I` instead of 127.0.0.1).
+**Double-click `run_race_docker.cmd`** (or `./run_race_docker.sh` on
+macOS/Linux). It tears down any previous container, starts the sim,
+waits for the render server, and opens your native editor on it.
+
+On the native WSL setup use `run_race.cmd` instead — same flow, WSL
+instead of a container. It connects to the WSL VM's IP because Windows'
+localhost relay to WSL is flaky (connecting by hand, use
+`wsl hostname -I`, not 127.0.0.1).
 
 Manual equivalent:
 
