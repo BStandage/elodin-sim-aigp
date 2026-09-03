@@ -173,6 +173,21 @@ Healthy output ends like:
 The `m betaflight` line `git status` shows after building is expected
 (the build script toggles lockstep in the submodule). Don't commit it.
 
+### Racing: Missing `betaflight_SITL.elf`
+
+In the case that after you either **double-click `run_race_docker.cmd`** (or `./run_race_docker.sh` on
+macOS/Linux) and the drone appears but does not move, this is usually caused by missing a betaflight binary file called `betaflight_SITL.elf`. 
+
+The following steps should be taken to get the drone following the desired path.
+
+1. Reopen this repository in WSL to enable fetching and building scripts for betaflight.
+2. In the repository root, `elodin-sim-aigp/`, run: `bash scripts/fetch_betaflight.sh`.
+3. In the repository root, `elodin-sim-aigp/`, run: `bash scripts/build_betaflight.sh`.
+4. `/betaflight/obj/` should now be populated with a `main/` folder and a file similar to if not exactly: `betaflight_2026.6.0-alpha_SITL`.
+5. Check within `/betaflight/obj/main/` for `betaflight_SITL.elf` and `betaflight_SITL.map`, if they are present, continue.
+6. Copy and paste all of the contents of `betaflight/obj/` from your WSL repository to your host repository (elodin-sim-aigp).
+7. Retry **double-clicking `run_race_docker.cmd`** with these files now in `obj/`.
+
 ## Writing your solver
 
 One function: `autopilot(update: SensorUpdate) -> RCCommand`. The
