@@ -44,8 +44,14 @@ services:
       # Betaflight build artifacts stay off the host repo and survive
       # container recreation (first run builds SITL once, ~2-5 min).
       - bf-build:/work/elodin-sim-aigp/betaflight/obj
+      # Live elodin_db writes (per-entity, per-tick) are also too slow on a
+      # Windows/Mac bind mount — measured ~2 min between entity inserts,
+      # which starves the render server's camera warm-up window and leaves
+      # the viewport empty. Off the mount, onto fast VM disk.
+      - sim-run:/work/elodin-sim-aigp/run
 
 volumes:
   venv:
   uv-cache:
   bf-build:
+  sim-run:
