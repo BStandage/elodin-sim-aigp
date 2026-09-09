@@ -590,7 +590,9 @@ def next_filename(pattern: str) -> str:
         i += 1
 
 
-db_filename = next_filename("betaflight_dbXXX")
+RUN_DIR = REPO_ROOT / "run"
+RUN_DIR.mkdir(exist_ok=True)
+db_filename = next_filename(str(RUN_DIR / "betaflight_dbXXX"))
 print(f"Writing database to: {db_filename}")
 world.run(system,
     simulation_rate=config.pid_rate,
