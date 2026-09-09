@@ -44,8 +44,7 @@ _THIS_REPO = Path(__file__).resolve().parent.parent
 _DEFAULT_AIGP = _THIS_REPO.parent / "AI-GrandPrix"
 
 AIGP_REPO = Path(os.environ.get("AIGP_REPO", str(_DEFAULT_AIGP)))
-DEFAULT_MAP_PATH = Path(
-    os.environ.get("AIGP_COURSE_MAP", str(AIGP_REPO / "data" / "course_map.json"))
+DEFAULT_MAP_PATH = Path(os.environ.get("AIGP_COURSE_MAP", str(AIGP_REPO / "data" / "course_map.json"))
 )
 
 _AIGP_SRC = str(AIGP_REPO / "src")
@@ -92,8 +91,7 @@ def map_to_sim_transform(course, start_standoff_m: float = 3.0) -> MapToSim:
     Translation places the sim origin (drone spawn) `start_standoff_m`
     before the order-0 gate's center along that gate's entry heading.
     """
-    start = min(
-        (g for g in course.gates if g.order is not None),
+    start = min((g for g in course.gates if g.order is not None),
         key=lambda g: g.order,
     )
     h = start.entry_heading_rad
@@ -148,23 +146,38 @@ class Cone:
 
 @dataclass(frozen=True)
 class RaceCourse:
-    gates: Tuple[SimGate, ...]           # physical bodies (12 for PQ)
-    crossings: Tuple[Crossing, ...]      # per-lap sequence (12 for PQ)
-    cones: Tuple[Cone, ...]
+    gates: Tuple[SimGate,...]           # physical bodies (12 for PQ)
+    crossings: Tuple[Crossing,...]      # per-lap sequence (12 for PQ)
+    cones: Tuple[Cone,...]
     laps: int
     transform: MapToSim
     source: str
     footprint_m: Tuple[float, float]
 
+    # A lap is start-line to start-line: g0 (start), then per lap
+    # [g1..g10low, g0]. The final g0 IS the finish line - the run is not
+    # complete until the drone crosses g0 after the last lap's g10-low
+    #. So the event
+    # count is laps*per_lap + 1 (the leading start g0), and every g0
+    # crossing after the start closes a lap.
     @property
     def total_events(self) -> int:
-        return self.laps * len(self.crossings)
+        return self.laps * len(self.crossings) + 1
 
     def event(self, event_idx: int) -> Crossing:
-        return self.crossings[event_idx % len(self.crossings)]
+        if event_idx <= 0:
+            return self.crossings[0]                      # start g0
+        # repeating tail: g1..g10low, then g0 (the lap/finish line)
+        tail_len = len(self.crossings)                    # 11 gates + g0
+        tail_pos = (event_idx - 1) % tail_len
+        if tail_pos == tail_len - 1:
+            return self.crossings[0]                       # g0 finish/lap
+        return self.crossings[tail_pos + 1]
 
     def lap_of(self, event_idx: int) -> int:
-        return event_idx // len(self.crossings)
+        if event_idx <= 0:
+            return 0
+        return (event_idx - 1) // len(self.crossings)
 
 
 # Cone geometry is NOT in the map (heights unknown). Conservative defaults;
@@ -177,8 +190,7 @@ CONE_HEIGHT_M = float(os.environ.get("AIGP_CONE_HEIGHT_M", "1.5"))
 DEFAULT_LAPS = 2
 
 
-def load_course(
-    map_path: Optional[os.PathLike] = None,
+def load_course(map_path: Optional[os.PathLike] = None,
     laps: int = DEFAULT_LAPS,
     start_standoff_m: float = 3.0,
     cone_radius_m: float = CONE_RADIUS_M,
@@ -201,12 +213,10 @@ def load_course(
         entry = tf.heading(g.entry_heading_rad)
         if g.type == "single":
             z = float(g.openings[0]["z"])
-            gates.append(SimGate(
-                label=f"g{g.order}", x=x, y=y, z=z, yaw_rad=yaw,
+            gates.append(SimGate(label=f"g{g.order}", x=x, y=y, z=z, yaw_rad=yaw,
                 heading_rad=entry, gate_order=g.order,
             ))
-            crossings.append(Crossing(
-                seq=seq, gate_order=g.order, label=f"g{g.order}",
+            crossings.append(Crossing(seq=seq, gate_order=g.order, label=f"g{g.order}",
                 x=x, y=y, z=z, heading_rad=entry,
             ))
             seq += 1
@@ -219,12 +229,10 @@ def load_course(
                 oh = opening.get("entry_heading_rad")
                 oh = entry if oh is None else tf.heading(float(oh))
                 label = f"g{g.order}-{name}"
-                gates.append(SimGate(
-                    label=label, x=x, y=y, z=z, yaw_rad=yaw,
+                gates.append(SimGate(label=label, x=x, y=y, z=z, yaw_rad=yaw,
                     heading_rad=oh, gate_order=g.order, stacked_member=name,
                 ))
-                crossings.append(Crossing(
-                    seq=seq, gate_order=g.order, label=label,
+                crossings.append(Crossing(seq=seq, gate_order=g.order, label=label,
                     x=x, y=y, z=z, heading_rad=oh,
                 ))
                 seq += 1
@@ -235,8 +243,7 @@ def load_course(
         cones.append(Cone(label=f"cone_{i}", x=cx, y=cy,
                           radius=cone_radius_m, height=cone_height_m))
 
-    return RaceCourse(
-        gates=tuple(gates),
+    return RaceCourse(gates=tuple(gates),
         crossings=tuple(crossings),
         cones=tuple(cones),
         laps=laps,
@@ -257,8 +264,7 @@ def _map_cones(cmap) -> List[Tuple[float, float]]:
 # Pass detection
 # ===========================================================================
 
-def crossing_hit(
-    c: Crossing,
+def crossing_hit(c: Crossing,
     prev_pos: Sequence[float],
     curr_pos: Sequence[float],
 ) -> bool:
@@ -376,8 +382,7 @@ class RaceTracker:
             for g in self.course.gates:
                 if gate_frame_hit(g, p):
                     self.crashed = True
-                    self.gate_contacts.append(
-                        GateContact(t, g.label, p[0], p[1], p[2]))
+                    self.gate_contacts.append(GateContact(t, g.label, p[0], p[1], p[2]))
                     break
         if (self._prev is not None and not self.complete
                 and not self.crashed):
@@ -387,7 +392,11 @@ class RaceTracker:
                 self.event_times.append(t)
                 self.event_idx += 1
                 per_lap = len(self.course.crossings)
-                if self.event_idx % per_lap == 0:
+                # A lap closes on each g0 crossing AFTER the start g0, i.e.
+                # the crossing just completed (index event_idx-1) is a
+                # positive multiple of per_lap (indices 12, 24 for 2 laps).
+                completed = self.event_idx - 1
+                if completed > 0 and completed % per_lap == 0:
                     self.lap_times.append(t)
         self._check_cones(t, p)
         self._prev = p
@@ -434,8 +443,7 @@ class RaceTracker:
                  "pos": [round(c.x, 2), round(c.y, 2), round(c.z, 2)]}
                 for c in self.gate_contacts
             ],
-            "total_time_s": round(
-                self.event_times[-1], 4) if self.complete else None,
+            "total_time_s": round(self.event_times[-1], 4) if self.complete else None,
             "final_t_s": round(final_t, 4),
             "events": events,
             "lap_times": laps,

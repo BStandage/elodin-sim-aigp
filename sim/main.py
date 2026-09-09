@@ -38,8 +38,7 @@ from sim.config import DEFAULT_CONFIG
 from sim.physics import Drone, create_physics_system
 from sim.sensors import IMU, create_sensor_system, SensorDataBuffer
 from sim.visualization import DroneViz, create_visualization_system
-from sim.betaflight_bridge import (
-    BetaflightSyncBridge,
+from sim.betaflight_bridge import (BetaflightSyncBridge,
     RCPacket,
     MAX_RC_CHANNELS,
 )
@@ -98,8 +97,7 @@ world = el.World()
 # Active race course: the PQ course extracted from the overhead render,
 # loaded through the AI-GrandPrix map loader and expressed in the sim frame
 # (drone spawn = 3 m before g0 along its entry heading; see sim/pq_course.py).
-ACTIVE_COURSE = pq_course.load_course(
-    laps=int(os.environ.get("AIGP_LAPS", "1"))
+ACTIVE_COURSE = pq_course.load_course(laps=int(os.environ.get("AIGP_LAPS", "2"))
 )
 pq_course.print_frame_report(ACTIVE_COURSE)
 
@@ -107,23 +105,17 @@ pq_course.print_frame_report(ACTIVE_COURSE)
 # hardcoded): the FPV camera should see g0 from the start line, and the
 # yaw loop should not open the race 90 degrees wrong.
 _yaw0 = ACTIVE_COURSE.crossings[0].heading_rad
-config.initial_quaternion = np.array(
-    [0.0, 0.0, np.sin(_yaw0 / 2.0), np.cos(_yaw0 / 2.0)]
+config.initial_quaternion = np.array([0.0, 0.0, np.sin(_yaw0 / 2.0), np.cos(_yaw0 / 2.0)]
 )
 
-drone = world.spawn(
-    [
-        el.Body(
-            world_pos=el.SpatialTransform(
-                linear=jnp.array(config.initial_position),
+drone = world.spawn([
+        el.Body(world_pos=el.SpatialTransform(linear=jnp.array(config.initial_position),
                 angular=el.Quaternion(jnp.array(config.initial_quaternion)),
             ),
-            world_vel=el.SpatialMotion(
-                linear=jnp.array(config.initial_velocity),
+            world_vel=el.SpatialMotion(linear=jnp.array(config.initial_velocity),
                 angular=jnp.array(config.initial_angular_velocity),
             ),
-            inertia=el.SpatialInertia(
-                mass=config.mass,
+            inertia=el.SpatialInertia(mass=config.mass,
                 inertia=jnp.array(config.inertia_diagonal),
             ),
         ),
@@ -146,8 +138,7 @@ FPV_CAM_NAME = fpv_camera.register(world, drone)
 RENDER_EVERY = config.fpv_tick_interval
 
 # Editor schematic for visualization
-world.schematic(
-    """
+world.schematic("""
     timeline follow_latest=#true
 
     tabs {{
@@ -207,8 +198,7 @@ system = physics | sensors | visualization
 
 # Register Betaflight SITL as an s10 process recipe so s10 manages its
 # lifecycle (start/stop) in every execution context.
-betaflight_recipe = el.s10.PyRecipe.process(
-    name="Betaflight SITL",
+betaflight_recipe = el.s10.PyRecipe.process(name="Betaflight SITL",
     cmd=str(BETAFLIGHT_PATH),
     cwd=str(REPO_ROOT),
 )
@@ -216,8 +206,7 @@ world.recipe(betaflight_recipe)
 
 print(f"[CFG] Betaflight SITL: {BETAFLIGHT_PATH.name}")
 print(f"[CFG] Simulation: {config.simulation_time}s at {config.pid_rate:.0f}Hz PID loop")
-print(
-    f"[CFG] Sensor rates: gyro={config.gyro_rate:.0f}Hz, accel={config.accel_rate:.0f}Hz, baro={config.baro_rate:.0f}Hz, mag={config.mag_rate:.0f}Hz"
+print(f"[CFG] Sensor rates: gyro={config.gyro_rate:.0f}Hz, accel={config.accel_rate:.0f}Hz, baro={config.baro_rate:.0f}Hz, mag={config.mag_rate:.0f}Hz"
 )
 
 
@@ -247,6 +236,14 @@ state = [None]
 start_time = [None]
 last_print = [0.0]
 _completed = [False]
+# Tick at which the race was DECIDED (all gates crossed, or a frame
+# contact froze scoring). The sim then runs only a short grace window
+# instead of the full AIGP_SIM_TIME - a crash at t=6 s used to keep
+# simulating a dead drone for ~150 s of sim time (~4 min wall) before
+# writing the identical record. Grace lets a
+# post-finish landing-frame touch still register before the summary.
+_decided_tick = [None]
+_GRACE_S = 4.0
 
 # Pre-allocated buffers to avoid allocation in hot loop
 _rc_channels_buffer = np.full(MAX_RC_CHANNELS, 1500, dtype=np.uint16)
@@ -299,9 +296,18 @@ def sitl_post_step(tick: int, ctx: el.StepContext):
         warmup_channels[4] = 1000  # Disarmed
         warmup_rc = RCPacket(timestamp=0.0, channels=warmup_channels)
 
+        # WAIT for Betaflight instead of spraying a fixed 0.5 s of packets:
+        # BF's boot time is variable (its eeprom lives on the Windows 9p
+        # mount - cold after every wsl --shutdown, sometimes 10-60 s), and
+        # the old fixed window then "completed" with 0 responses, dooming
+        # the run to one 1000 ms timeout per tick until a watchdog killed
+        # it. This was the dominant "dead bridge at boot" flake
+        # (2026-08-29/31: at least six lost launches). Keep sending until
+        # BF actually answers 50 times or a generous deadline passes.
         warmup_count = 0
-        warmup_packets = int(0.5 / config.dt)
-        for i in range(warmup_packets):
+        warmup_deadline = time.time() + 90.0
+        i = 0
+        while warmup_count < 50 and time.time() < warmup_deadline:
             try:
                 warmup_fdm.timestamp = i * config.dt
                 warmup_rc.timestamp = i * config.dt
@@ -309,6 +315,11 @@ def sitl_post_step(tick: int, ctx: el.StepContext):
                 warmup_count += 1
             except TimeoutError:
                 pass
+            i += 1
+            if i % 4000 == 0:
+                waited = 90.0 - (warmup_deadline - time.time())
+                print(f"[SITL]... still waiting for Betaflight "
+                      f"({warmup_count} responses, {waited:.0f}s)")
         print(f"[SITL] Warmup complete ({warmup_count} responses at {config.pid_rate:.0f}Hz)")
         print("[SITL] Bridge ready")
         _warmup_done_tick[0] = tick
@@ -334,8 +345,7 @@ def sitl_post_step(tick: int, ctx: el.StepContext):
     world_pos = np.array([0.0, 0.0, 0.0, 1.0, *config.initial_position])
     world_vel = np.zeros(6)
     try:
-        sensor_data = ctx.component_batch_operation(
-            reads=[
+        sensor_data = ctx.component_batch_operation(reads=[
                 "drone.accel",
                 "drone.gyro",
                 "drone.baro",
@@ -352,8 +362,7 @@ def sitl_post_step(tick: int, ctx: el.StepContext):
         world_vel = np.array(sensor_data["drone.world_vel"])
 
         # Update sensor buffer with real physics data
-        buf.update(
-            world_pos=world_pos,
+        buf.update(world_pos=world_pos,
             world_vel=world_vel,
             accel=accel,
             gyro=gyro,
@@ -372,8 +381,7 @@ def sitl_post_step(tick: int, ctx: el.StepContext):
     rc_cmd = _current_rc[0]
     s.arm = rc_cmd.arm
     s.throttle = rc_cmd.throttle
-    phase = (
-        "disarm" if rc_cmd.arm < 1700
+    phase = ("disarm" if rc_cmd.arm < 1700
         else ("arm-idle" if rc_cmd.throttle < 1100 else "fly")
     )
     channels = _rc_channels_buffer
@@ -409,8 +417,7 @@ def sitl_post_step(tick: int, ctx: el.StepContext):
             _latest_frame_tick[0] = tick
             _fpv_frames[0] += 1
             if not _fpv_first_logged[0]:
-                print(
-                    f"[FPV] First frame at tick {tick}: "
+                print(f"[FPV] First frame at tick {tick}: "
                     f"shape={frame.shape}, dtype={frame.dtype}, "
                     f"nonzero={int(np.count_nonzero(frame))}"
                 )
@@ -421,11 +428,9 @@ def sitl_post_step(tick: int, ctx: el.StepContext):
 
     # "gate" indices exposed to the solver are CROSSING-EVENT indices in the
     # ordered 2-lap sequence (stacked gate = two events per lap).
-    next_gate_index = (
-        _race_tracker.event_idx if not _race_tracker.complete else -1
+    next_gate_index = (_race_tracker.event_idx if not _race_tracker.complete else -1
     )
-    solver_update = SensorUpdate(
-        t=t,
+    solver_update = SensorUpdate(t=t,
         tick=tick,
         world_pos=np.asarray(world_pos),
         world_vel=np.asarray(world_vel),
@@ -470,8 +475,7 @@ def sitl_post_step(tick: int, ctx: el.StepContext):
         event_idx = _race_tracker.event_idx - 1
         lap = ACTIVE_COURSE.lap_of(event_idx)
         t_pass = _race_tracker.event_times[-1]
-        print(
-            f"[GATE] lap {lap} {hit.label} (event {event_idx}) "
+        print(f"[GATE] lap {lap} {hit.label} (event {event_idx}) "
             f"at t={t_pass:.2f}s z_opening={hit.z:.2f} "
             f"pos=({curr_pos[0]:.2f},{curr_pos[1]:.2f},{curr_pos[2]:.2f})"
         )
@@ -479,8 +483,7 @@ def sitl_post_step(tick: int, ctx: el.StepContext):
             pass_times = np.full(race_course.MAX_GATES, -1.0)
             n = min(len(_race_tracker.event_times), race_course.MAX_GATES)
             pass_times[:n] = _race_tracker.event_times[:n]
-            ctx.write_component(
-                "drone.last_gate_passed",
+            ctx.write_component("drone.last_gate_passed",
                 np.array([float(event_idx)]),
             )
             ctx.write_component("drone.gate_pass_times", pass_times)
@@ -505,15 +508,22 @@ def sitl_post_step(tick: int, ctx: el.StepContext):
         except Exception:
             pos_str = "pos=?,?,?"
 
-        print(
-            f"  t={t:5.1f}s | {phase:8} | {armed:8} | "
+        print(f"  t={t:5.1f}s | {phase:8} | {armed:8} | "
             f"motors=[{s.motors[0]:.3f},{s.motors[1]:.3f},{s.motors[2]:.3f},{s.motors[3]:.3f}] | "
             f"{pos_str} | {rate:.1f}x realtime"
         )
         last_print[0] = t
 
+    # Early finish: once the race is decided (complete or crashed) run only
+    # a short grace window rather than the whole AIGP_SIM_TIME.
+    if _decided_tick[0] is None and (_race_tracker.complete
+                                     or _race_tracker.crashed):
+        _decided_tick[0] = tick
+    _grace_over = (_decided_tick[0] is not None
+                   and (tick - _decided_tick[0]) * config.dt >= _GRACE_S)
+
     # Check if simulation is complete - print summary and exit
-    if tick >= MAX_TICKS - 1:
+    if tick >= MAX_TICKS - 1 or _grace_over:
         _completed[0] = True
         b.stop()
         elapsed = time.time() - start_time[0]
@@ -531,8 +541,7 @@ def sitl_post_step(tick: int, ctx: el.StepContext):
         print()
         print("=" * 50)
         print("Simulation complete!")
-        print(
-            f"  Simulated: {s.sim_time:.1f}s in {elapsed:.1f}s "
+        print(f"  Simulated: {s.sim_time:.1f}s in {elapsed:.1f}s "
             f"({s.sim_time / elapsed if elapsed > 0 else 0:.1f}x realtime)"
         )
         print(f"  Total ticks: {s.tick}")
@@ -563,7 +572,6 @@ def sitl_post_step(tick: int, ctx: el.StepContext):
 
 # Return the next non-existent filename with auto-incremented
 # number if the pattern ends in Xs.
-#
 # e.g., `next_filename("sim_sitlXXX") -> "sim_sitl001"`
 # `next_filename("sim_sitl_mine") -> "sim_sitl_mine"`
 def next_filename(pattern: str) -> str:
@@ -584,8 +592,7 @@ def next_filename(pattern: str) -> str:
 
 db_filename = next_filename("betaflight_dbXXX")
 print(f"Writing database to: {db_filename}")
-world.run(
-    system,
+world.run(system,
     simulation_rate=config.pid_rate,
     # Real-time pacing let wall-clock stalls (WSL disk hiccups) skip ahead
     # and hand the solver random 100ms+ control gaps mid-corner - measured
