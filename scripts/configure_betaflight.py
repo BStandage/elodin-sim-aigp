@@ -38,9 +38,13 @@ CLI_PORT = 5761
 CLI_COMMANDS = [
     # Map AUX1 to the ARM mode (mode 0). Trigger when channel value is 1700-2100.
     "aux 0 0 0 1700 2100 0 0",
-    # Map AUX2 to ANGLE mode (mode 1): auto-leveling so the solver can send
-    # stable angle-target inputs instead of fighting raw rate commands.
-    "aux 1 1 1 1700 2100 0 0",
+    # ACRO ONLY (2026-08-29): the old AUX2->ANGLE mapping was INERT the
+    # whole time - solvers send aux2=1500, outside 1700-2100, so the FC has
+    # always flown acro (confirmed by sysid: slew scaled with stick_clamp
+    # along the ACTUAL-rates curve; angle_limit/angle_p_gain steps measured
+    # +0.0). The mapping is removed so nobody trips over it again; sticks
+    # are BODY RATE commands, and Brian wants acro anyway (inversion later).
+    "aux 1 0 0 900 900 0 0",
     # 1:1 PID denom for lockstep SITL
     "set gyro_hardware_lpf = NORMAL",
     "set pid_process_denom = 1",
@@ -58,15 +62,40 @@ CLI_COMMANDS = [
     # cycle at ~10 Hz: motors slam min<->max, and with AIRMODE the mixer
     # keeps average thrust high enough that min throttle cannot descend.
     # Soften the rate loop and drop airmode so throttle authority returns.
+    # --- Tune sprint (2026-08-28): raising the rate loop back toward stock
+    # stepwise, re-measuring solvers.sysid_slew after each step. Wobble-era
+    # values were 20/40/12 (yaw 25/45); stock is 45/80/30 (yaw 45/80).
     "feature -AIRMODE",
-    "set p_roll = 20",
-    "set i_roll = 40",
-    "set d_roll = 12",
-    "set p_pitch = 20",
-    "set i_pitch = 40",
-    "set d_pitch = 12",
-    "set p_yaw = 25",
-    "set i_yaw = 45",
+    # 30/55/20, NOT stock 45/80/30 (2026-08-29): stock rate PIDs churn the
+    # motors so hard on this airframe that average output floors near hover
+    # and throttle-down cannot descend (flown: z pinned at 1.9 m with
+    # throttle commanded 1142-1188 vs hover 1240) - the original taming
+    # comment above was right about that. Slew barely cares (measured 25.5
+    # at 30/55/20 vs 27.8 at stock); descent authority matters more.
+    # STOCK rate PIDs (no softening) - Brian wants the drone flown at full
+    # aggression like the aerobatic footage, not the tamed 30/55/20.
+    "set p_roll = 45",
+    "set i_roll = 80",
+    "set d_roll = 30",
+    "set p_pitch = 45",
+    "set i_pitch = 80",
+    "set d_pitch = 30",
+    "set p_yaw = 45",
+    "set i_yaw = 80",
+    # (2026-08-29) angle_limit/angle_p_gain sets removed: ANGLE mode was
+    # never active (see aux note above) and sysid measured both knobs inert.
+    # --- Rate profile (2026-09-08): the REAL slew sandbag. With stock rates
+    # (~670 deg/s) sysid measured ~20 m/s^3 slew no matter the PIDs or
+    # stick_clamp - because those set stability/authority, not max rotation
+    # SPEED. Full stick on stock rates still only rolls at 670 deg/s. Push
+    # rc_rate + super_rate toward aerobatic (~1200 deg/s) so the acro
+    # airframe rotates like the footage. Re-measure slew after this.
+    "set roll_rc_rate = 140",
+    "set pitch_rc_rate = 140",
+    "set yaw_rc_rate = 140",
+    "set roll_srate = 78",
+    "set pitch_srate = 78",
+    "set yaw_srate = 78",
     # Persist
     "save",
 ]
