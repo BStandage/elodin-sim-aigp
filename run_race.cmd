@@ -5,22 +5,23 @@ REM   1. kills any stale sim processes in WSL
 REM   2. starts the sim (Betaflight + physics + solver) in a WSL window
 REM   3. waits for the render server, then opens the Elodin editor
 REM
-REM  Optional argument: solver module (default: solver.pq_waypoints)
-REM    run_race.cmd solver.baseline
+REM  Optional argument: solver module (default: solvers.follower, the
+REM  racing-line stack; it flies the newest plan in AI-GrandPrix/out/plans)
+REM    run_race.cmd solver.pq_waypoints   (the old stop-and-center pilot)
 REM ==================================================================
 setlocal
 cd /d "%~dp0"
 set "SOLVER=%~1"
-if "%SOLVER%"=="" set "SOLVER=solver.pq_waypoints"
+if "%SOLVER%"=="" set "SOLVER=solvers.follower"
 
 echo Cleaning up any previous run...
 wsl -e bash -lc "pkill -f betaflight_SITL; pkill -f render-server; pkill -f 'elodin run'; true" >nul 2>&1
 timeout /t 1 /nobreak >nul
 
 echo Starting sim (RACE_SOLVER=%SOLVER%) in a WSL window...
-REM solvers.follower needs a plan (AIGP_TRAJ): hand it the newest one from
-REM the AI-GrandPrix repo, if any exist. Harmless for other solvers.
-start "PQ race sim" wsl -e bash -lc "cd $(wslpath -a '%~dp0') && T=$(ls -t $(wslpath -a '%~dp0')../AI-GrandPrix/out/plans/plan_*.json 2>/dev/null | head -1); [ -n \"$T\" ] && export AIGP_TRAJ=\"$T\" && echo Using plan: $T; RACE_SOLVER=%SOLVER% ~/.local/bin/uv run -- ~/.cargo/bin/elodin run sim/main.py; echo; echo --- run ended, press Enter to close ---; read _"
+REM All plan/toml/env logic lives in scripts/launch_race.sh (quoting bash
+REM inside a batch string breaks cmd's parser - been there).
+start "PQ race sim" wsl -e bash -lc "bash $(wslpath -a '%~dp0')scripts/launch_race.sh %SOLVER%"
 
 REM Windows' localhost->WSL relay is flaky; talk to the WSL VM's IP directly.
 for /f "tokens=1" %%i in ('wsl hostname -I') do set "WSLIP=%%i"

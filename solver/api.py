@@ -52,6 +52,12 @@ class SensorUpdate:
     last_gate_passed: int = -1
     next_gate_index: int = -1
 
+    # Betaflight's normalized motor outputs [BR, FR, BL, FL] in 0..1 from the
+    # previous tick (sim diagnostic only; a real FC does not report this).
+    # Lets a solver log the collective the mixer actually produced versus
+    # the throttle it asked for.
+    motors: Optional[np.ndarray] = None
+
 
 @dataclass
 class RCCommand:

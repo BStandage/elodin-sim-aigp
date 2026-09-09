@@ -30,7 +30,7 @@ services:
     environment:
       RACE_SOLVER: ${RACE_SOLVER:-solvers.follower}
       AIGP_SIM_TIME: ${AIGP_SIM_TIME:-250.0}
-      AIGP_LAPS: ${AIGP_LAPS:-1}
+      AIGP_LAPS: ${AIGP_LAPS:-}     # empty = take laps from the plan (entrypoint)
       AIGP_REALTIME: ${AIGP_REALTIME:-1}
     volumes:
       # Both repos live on the host, side by side, exactly like the

@@ -72,16 +72,34 @@ CLI_COMMANDS = [
     # throttle commanded 1142-1188 vs hover 1240) - the original taming
     # comment above was right about that. Slew barely cares (measured 25.5
     # at 30/55/20 vs 27.8 at stock); descent authority matters more.
-    # STOCK rate PIDs (no softening) - Brian wants the drone flown at full
-    # aggression like the aerobatic footage, not the tamed 30/55/20.
-    "set p_roll = 45",
-    "set i_roll = 80",
-    "set d_roll = 30",
-    "set p_pitch = 45",
-    "set i_pitch = 80",
-    "set d_pitch = 30",
-    "set p_yaw = 45",
-    "set i_yaw = 80",
+    # (2026-09-08 tried STOCK 45/80/30 for full aggression. 2026-09-09
+    # race trace race_000.csv: z pinned at 1.9-2.0 m with the follower
+    # commanding throttle 1062-1100 and 2.5-4 m/s^2 of thrust, while the
+    # implied vertical thrust stayed 10-12 m/s^2 - the SAME collective
+    # floor the note above describes. Descent authority comes from these
+    # PIDs, not from the throttle loop. Aggression now comes from the RATE
+    # PROFILE below, which is where the slew was measured to live.)
+    "set p_roll = 30",
+    "set i_roll = 55",
+    "set d_roll = 20",
+    "set p_pitch = 30",
+    "set i_pitch = 55",
+    "set d_pitch = 20",
+    "set p_yaw = 30",
+    "set i_yaw = 55",
+    # Setpoint FEEDFORWARD OFF (2026-09-09, race_001.csv with motors
+    # logged): the solver drives the sticks at 1 kHz from a gyro-damped
+    # attitude loop, so the setpoint jitters +-50 PWM tick to tick and a
+    # 96 PWM stick step slammed the mixer to idle/0.65 on the very NEXT
+    # tick, before the gyro had moved - that is feedforward on the
+    # setpoint derivative, not P or D. The clipped mixer then averages
+    # ABOVE hover (m_mean 0.30-0.40 vs hover 0.26) and no throttle command
+    # can descend (z froze at 1.77 m with -4 m/s^2 commanded). With the
+    # sticks static the four motors were equal, so the plant itself is
+    # fine. Rate PIDs 30/55/20 above are the tamed values from 08-29.
+    "set f_roll = 0",
+    "set f_pitch = 0",
+    "set f_yaw = 0",
     # (2026-08-29) angle_limit/angle_p_gain sets removed: ANGLE mode was
     # never active (see aux note above) and sysid measured both knobs inert.
     # --- Rate profile (2026-09-08): the REAL slew sandbag. With stock rates

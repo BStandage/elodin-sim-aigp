@@ -446,6 +446,7 @@ def sitl_post_step(tick: int, ctx: el.StepContext):
         frame_fresh=(_latest_frame_tick[0] > _last_consumed_frame_tick[0]),
         last_gate_passed=_race_tracker.event_idx - 1,
         next_gate_index=next_gate_index,
+        motors=np.asarray(s.motors),
     )
     try:
         rc_out = _solver_module.autopilot(solver_update)

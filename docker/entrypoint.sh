@@ -45,24 +45,47 @@ if [ ! -f "$ELF" ]; then
     bash scripts/build_betaflight.sh
 fi
 
+# Betaflight boots from the persisted eeprom.bin, and configure_betaflight.py
+# was a MANUAL step nobody ran (the drone flew a stock eeprom for weeks).
+# Regenerate it whenever the script is newer than the eeprom, so editing
+# the tune and clicking run_race_docker.cmd is enough.
+if [ "${AIGP_SKIP_BF_CONFIG:-}" != "1" ] && { [ ! -f eeprom.bin ] || [ scripts/configure_betaflight.py -nt eeprom.bin ]; }; then
+    echo "==> eeprom.bin is missing or older than scripts/configure_betaflight.py - regenerating"
+    uv run python scripts/configure_betaflight.py
+fi
+
 # Mirror run_race.cmd: hand plan-following solvers the newest racing-line
 # plan from the companion repo, if any exist. Harmless for other solvers.
 # The follower must also fly the SAME vehicle.toml the plan was built with
 # (a hot plan under conservative clamps corner-cuts and crashes), so the
 # toml comes out of the plan's config_path field.
+# Pinned plan first (plan_RACE.json, what run_race.cmd/launch_race.sh
+# fly), else the newest plan_*.json. Laps come from the plan unless the
+# caller set AIGP_LAPS (docker-compose passes it through empty otherwise).
 if [ -z "${AIGP_TRAJ:-}" ]; then
-    T=$(ls -t "${AIGP_REPO}"/out/plans/plan_*.json 2>/dev/null | head -1 || true)
+    T="${AIGP_REPO}/out/plans/plan_RACE.json"
+    [ -f "$T" ] || T=$(ls -t "${AIGP_REPO}"/out/plans/plan_*.json 2>/dev/null | head -1 || true)
     if [ -n "$T" ]; then
         export AIGP_TRAJ="$T"
         echo "==> Using plan: $T"
+        if [ -z "${AIGP_LAPS:-}" ]; then
+            L=$(grep -o '"laps": [0-9]*' "$T" | head -1 | grep -o '[0-9]*' || true)
+            export AIGP_LAPS="${L:-2}"
+        fi
+        echo "==> Laps: $AIGP_LAPS"
         if [ -z "${AIGP_VEHICLE_TOML:-}" ]; then
             B=$(grep -o '"config_path": "[^"]*"' "$T" | cut -d'"' -f4 || true)
-            if [ -n "$B" ]; then
-                export AIGP_VEHICLE_TOML="${AIGP_REPO}/config/$(basename "$B")"
-                echo "==> Using toml: $AIGP_VEHICLE_TOML"
+            B="${B//\\//}"        # Windows backslashes -> forward slashes
+            B="${B##*/}"          # basename (works now that sep is '/')
+            if [ -n "$B" ] && [ -f "${AIGP_REPO}/config/${B}" ]; then
+                export AIGP_VEHICLE_TOML="${AIGP_REPO}/config/${B}"
+            else
+                export AIGP_VEHICLE_TOML="${AIGP_REPO}/config/vehicle.toml"
             fi
+            echo "==> Using toml: $AIGP_VEHICLE_TOML"
         fi
     fi
 fi
+export AIGP_LAPS="${AIGP_LAPS:-2}"
 
 exec "$@"

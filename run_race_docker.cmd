@@ -89,6 +89,21 @@ if not errorlevel 1 (
 
 echo Cleaning up any previous run...
 docker compose down --remove-orphans >nul 2>&1
+echo Waiting for port 2240 to free...
+set /a downtries=0
+:waitdown
+powershell -NoProfile -Command "$c=New-Object Net.Sockets.TcpClient; try { $c.Connect('127.0.0.1',2240); exit 0 } catch { exit 1 } finally { $c.Close() }" >nul 2>&1
+if %errorlevel% neq 0 goto downok
+set /a downtries+=1
+if %downtries% geq 20 (
+  echo Port 2240 still held - forcing the old container off.
+  docker compose kill >nul 2>&1
+  docker compose down --remove-orphans >nul 2>&1
+  goto downok
+)
+timeout /t 1 /nobreak >nul
+goto waitdown
+:downok
 
 echo Starting sim (RACE_SOLVER=%SOLVER%) in a Docker window...
 REM RACE_SOLVER is read by docker-compose.yml from this environment.
@@ -114,6 +129,8 @@ timeout /t 1 /nobreak >nul
 goto wait
 
 :ready
-echo Render server is up - opening the editor at localhost:2240 ...
+echo Render server is up - waiting 4s for the world to load...
+timeout /t 4 /nobreak >nul
+echo Opening the editor at localhost:2240 ...
 "%LOCALAPPDATA%\Programs\elodin\elodin.exe" editor 127.0.0.1:2240
 endlocal
