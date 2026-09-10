@@ -129,8 +129,8 @@ timeout /t 1 /nobreak >nul
 goto wait
 
 :ready
-echo Render server is up - waiting 4s for the world to load...
-timeout /t 4 /nobreak >nul
+echo Render server is up - waiting 10s for the world to load...
+timeout /t 10 /nobreak >nul
 echo Opening the editor at localhost:2240 ...
 "%LOCALAPPDATA%\Programs\elodin\elodin.exe" editor 127.0.0.1:2240
 endlocal

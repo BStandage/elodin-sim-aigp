@@ -79,14 +79,21 @@ CLI_COMMANDS = [
     # floor the note above describes. Descent authority comes from these
     # PIDs, not from the throttle loop. Aggression now comes from the RATE
     # PROFILE below, which is where the slew was measured to live.)
-    "set p_roll = 30",
-    "set i_roll = 55",
-    "set d_roll = 20",
-    "set p_pitch = 30",
-    "set i_pitch = 55",
-    "set d_pitch = 20",
-    "set p_yaw = 30",
-    "set i_yaw = 55",
+    # (2026-09-09 evening, slew_010-012): with the aerobatic rate map the
+    # 30/55/20 rate loop is the slew limiter - every attitude step rotated
+    # at 90-125 deg/s whatever the follower gain (120/250), the feedforward
+    # smoothing or the rate map shape (super-expo vs linear). The 08-29
+    # "slew barely cares about PIDs" was measured on STOCK rates, where the
+    # map capped everything at ~25 m/s^3 first. Stock rate PIDs, feedforward
+    # still OFF (that was the mixer-slamming term), airmode still off.
+    "set p_roll = 45",
+    "set i_roll = 80",
+    "set d_roll = 30",
+    "set p_pitch = 45",
+    "set i_pitch = 80",
+    "set d_pitch = 30",
+    "set p_yaw = 45",
+    "set i_yaw = 80",
     # Setpoint FEEDFORWARD OFF (2026-09-09, race_001.csv with motors
     # logged): the solver drives the sticks at 1 kHz from a gyro-damped
     # attitude loop, so the setpoint jitters +-50 PWM tick to tick and a
@@ -97,6 +104,10 @@ CLI_COMMANDS = [
     # can descend (z froze at 1.77 m with -4 m/s^2 commanded). With the
     # sticks static the four motors were equal, so the plant itself is
     # fine. Rate PIDs 30/55/20 above are the tamed values from 08-29.
+    # (2026-09-09 evening: feedforward ON with heavy setpoint smoothing was
+    # tried and measured NO change in attitude slew - slew_011 vs slew_010,
+    # 90% rise 0.36-0.58 s both - so it stays off; the slew limit was the
+    # rate map below, not feedforward.)
     "set f_roll = 0",
     "set f_pitch = 0",
     "set f_yaw = 0",
@@ -108,12 +119,25 @@ CLI_COMMANDS = [
     # SPEED. Full stick on stock rates still only rolls at 670 deg/s. Push
     # rc_rate + super_rate toward aerobatic (~1200 deg/s) so the acro
     # airframe rotates like the footage. Re-measure slew after this.
-    "set roll_rc_rate = 140",
-    "set pitch_rc_rate = 140",
-    "set yaw_rc_rate = 140",
-    "set roll_srate = 78",
-    "set pitch_srate = 78",
-    "set yaw_srate = 78",
+    # (2026-09-09 evening, slew_010/011 + race_032): the super-expo map
+    # above only delivers its ~1270 deg/s at FULL stick. The follower's
+    # proportional attitude loop puts 50-250 PWM on the sticks, and there
+    # the same map commands 30-200 deg/s: measured attitude rotation
+    # 90-125 deg/s in every step regardless of amplitude or ka_att (120
+    # or 250), thrust vector 0.5 s behind the plan, 2-3 m wide of g4.
+    # LINEAR map instead (ACTUAL rates, centre sensitivity = max rate,
+    # expo 0): the loop gain is then the same at every stick, 1000 deg/s
+    # per full throw, 2 deg/s per PWM. Re-measured with sysid_slew.
+    "set rates_type = ACTUAL",
+    "set roll_rc_rate = 100",
+    "set pitch_rc_rate = 100",
+    "set yaw_rc_rate = 100",
+    "set roll_srate = 100",
+    "set pitch_srate = 100",
+    "set yaw_srate = 100",
+    "set roll_expo = 0",
+    "set pitch_expo = 0",
+    "set yaw_expo = 0",
     # Persist
     "save",
 ]
@@ -175,6 +199,8 @@ def main() -> int:
     # this script's job is to update/persist the few settings this simulator
     # needs rather than force a full flash-format cycle every run.
 
+    import hashlib
+    before = hashlib.md5(EEPROM.read_bytes()).hexdigest() if EEPROM.exists() else None
     print(f"Starting {BF_BINARY.name}...")
     bf_log = open("/tmp/bf-configure.log", "w")
     bf = subprocess.Popen(
@@ -236,7 +262,11 @@ def main() -> int:
 
     if EEPROM.exists():
         sz = EEPROM.stat().st_size
-        print(f"\nOK: wrote {EEPROM} ({sz} bytes)")
+        after = hashlib.md5(EEPROM.read_bytes()).hexdigest()
+        if before is not None and after == before:
+            print(f"\nWARNING: {EEPROM} unchanged by save ({sz} bytes) - the CLI settings applied live but did not persist")
+        else:
+            print(f"\nOK: wrote {EEPROM} ({sz} bytes)")
         return 0
     print(f"ERROR: {EEPROM} was not created", file=sys.stderr)
     return 3

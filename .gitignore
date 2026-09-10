@@ -34,3 +34,4 @@ dbs/
 
 # uv
 uv.lock.bak
+eeprom.bin.src-sha

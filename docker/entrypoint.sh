@@ -49,9 +49,16 @@ fi
 # was a MANUAL step nobody ran (the drone flew a stock eeprom for weeks).
 # Regenerate it whenever the script is newer than the eeprom, so editing
 # the tune and clicking run_race_docker.cmd is enough.
-if [ "${AIGP_SKIP_BF_CONFIG:-}" != "1" ] && { [ ! -f eeprom.bin ] || [ scripts/configure_betaflight.py -nt eeprom.bin ]; }; then
+# Regenerate when the SCRIPT CONTENT changed (sha recorded next to the
+# eeprom after a successful run). The old mtime test regenerated on
+# every launch: on a Docker Desktop bind mount the SITL's eeprom write
+# never updated the host-visible mtime, so eeprom.bin always looked
+# older than the script (2026-09-09).
+CFG_SHA=$(sha1sum scripts/configure_betaflight.py | cut -c1-40)
+OLD_SHA=$(cat eeprom.bin.src-sha 2>/dev/null || true)
+if [ "${AIGP_SKIP_BF_CONFIG:-}" != "1" ] && { [ ! -f eeprom.bin ] || [ "$CFG_SHA" != "$OLD_SHA" ]; }; then
     echo "==> eeprom.bin is missing or older than scripts/configure_betaflight.py - regenerating"
-    uv run python scripts/configure_betaflight.py
+    uv run python scripts/configure_betaflight.py && echo "$CFG_SHA" > eeprom.bin.src-sha
 fi
 
 # Mirror run_race.cmd: hand plan-following solvers the newest racing-line
