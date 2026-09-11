@@ -111,6 +111,21 @@ CLI_COMMANDS = [
     "set f_roll = 0",
     "set f_pitch = 0",
     "set f_yaw = 0",
+    # I-TERM WINDUP LIMIT (2026-09-10, race_121.csv with all four motors
+    # logged): in every banked turn the pitch (or roll) rate I-term sat
+    # pinned at its default limit - a 0.40-0.47 motor mix with the sticks
+    # within +-30 of centre - and the mixer, which fits the mix before the
+    # throttle (throttle = min(throttle, 1 - mixMax)), paid for it out of
+    # the collective: one motor at 1.00, mean 0.52 against a 0.70 throttle
+    # command, 84% of the high-throttle ticks. The commanded 27 m/s^2
+    # arrived as 23 and no climb into g10-top could be flown at speed.
+    # iterm_windup is the I limit as a percent of pidsum_limit (default 80
+    # -> 400 = 0.4 mix); 20 is the minimum -> 0.1 mix. Anti-gravity
+    # (default gain 80) boosts I on throttle transients and is the other
+    # I amplifier; off. P and D untouched. Verified backward compatible
+    # by re-flying plan_L5_share10 with solvers.follower in the same batch.
+    "set iterm_windup = 20",
+    "set anti_gravity_gain = 0",
     # (2026-08-29) angle_limit/angle_p_gain sets removed: ANGLE mode was
     # never active (see aux note above) and sysid measured both knobs inert.
     # --- Rate profile (2026-09-08): the REAL slew sandbag. With stock rates

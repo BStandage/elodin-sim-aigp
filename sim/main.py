@@ -255,6 +255,23 @@ _last_render_tick = [-1]
 _latest_frame_tick = [-1]
 _last_consumed_frame_tick = [-1]
 _warmup_done_tick = [-1]
+BOOT_GRACE_HOLD_S = 5.5   # Betaflight ARMING_DISABLED_BOOT_GRACE_TIME is 5 s
+
+
+def _sitl_uptime_s() -> float:
+    """Seconds since the betaflight_SITL process started (Linux /proc)."""
+    try:
+        pid = subprocess.run(["pgrep", "-f", "betaflight_SITL"], capture_output=True,
+                             text=True, timeout=2).stdout.split()
+        if not pid:
+            return 999.0
+        with open("/proc/uptime") as f:
+            up = float(f.read().split()[0])
+        with open(f"/proc/{pid[0]}/stat") as f:
+            start_ticks = float(f.read().rsplit(")", 1)[1].split()[19])
+        return up - start_ticks / os.sysconf("SC_CLK_TCK")
+    except Exception:
+        return 999.0
 
 # Race state: ordered 2-lap crossing tracker (host-side, elodin-free).
 _race_tracker = pq_course.RaceTracker(ACTIVE_COURSE)
@@ -321,6 +338,24 @@ def sitl_post_step(tick: int, ctx: el.StepContext):
                 print(f"[SITL]... still waiting for Betaflight "
                       f"({warmup_count} responses, {waited:.0f}s)")
         print(f"[SITL] Warmup complete ({warmup_count} responses at {config.pid_rate:.0f}Hz)")
+        # BOOT GRACE HOLD: Betaflight refuses to arm for 5 s after its own
+        # boot, and the race clock starts at tick 0 regardless of how much
+        # of that grace is left. Liftoff then varied between 1.2 s and 3.1 s
+        # on identical solvers (2026-09-10 batch flights: a 34.0 s run lost
+        # 2.4 s on the pad). Keep exchanging disarmed packets (the clock does
+        # not advance inside this callback) until the SITL has been up long
+        # enough that the solver's arm request at 0.5 s is honoured.
+        hold_deadline = time.time() + 12.0
+        held = 0
+        while _sitl_uptime_s() < BOOT_GRACE_HOLD_S and time.time() < hold_deadline:
+            warmup_fdm.timestamp = (warmup_count + held) * config.dt
+            warmup_rc.timestamp = warmup_fdm.timestamp
+            try:
+                bridge[0].step(warmup_fdm, warmup_rc, timeout_ms=5)
+            except Exception:
+                pass
+            held += 1
+        print(f"[SITL] Boot-grace hold done: SITL up {_sitl_uptime_s():.1f}s after {held} extra packets")
         print("[SITL] Bridge ready")
         _warmup_done_tick[0] = tick
 
