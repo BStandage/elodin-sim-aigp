@@ -59,8 +59,22 @@ def reference_waypoints(c, laps=None, standoff=2.5):
     for lap in range(laps):
         for x in c.crossings:
             nx, ny = math.cos(x.heading_rad), math.sin(x.heading_rad)
+            # Approach via a detour point 2*standoff behind the gate and
+            # 2 m along the bar toward the previous waypoint, so the
+            # straight legs never cut through this gate's frame from the
+            # side (the referee scores frame contact as a crash).
+            px, py = wps[-1][0], wps[-1][1]
+            side = -(px - x.x) * ny + (py - x.y) * nx
+            side = 2.0 if side >= 0 else -2.0
+            wps.append((x.x - 2 * standoff * nx - side * ny,
+                        x.y - 2 * standoff * ny + side * nx, x.z))
             wps.append((x.x - standoff * nx, x.y - standoff * ny, x.z))
             wps.append((x.x + standoff * nx, x.y + standoff * ny, x.z))
+    # the run ends on the FINISH crossing of g0 (total_events = laps * n + 1)
+    g0 = c.crossings[0]
+    nx, ny = math.cos(g0.heading_rad), math.sin(g0.heading_rad)
+    wps.append((g0.x - standoff * nx, g0.y - standoff * ny, g0.z))
+    wps.append((g0.x + standoff * nx, g0.y + standoff * ny, g0.z))
     return wps
 
 
@@ -73,11 +87,20 @@ def test_transform_places_spawn_before_g0():
     tf = c.transform
     assert tf.dyaw_rad == 0.0
     g0 = c.crossings[0]
-    # g0's center must sit 3 m from the sim origin along its entry heading
+    # the spawn is the map's start line: g0 sits ahead of the origin,
+    # roughly along its entry heading (published map: 7.3 m, 4 deg off the
+    # centreline); a map without meta.start falls back to 3 m dead ahead
+    import common.course_map as cml
+    cmap = cml.load(str(pq_course.DEFAULT_MAP_PATH))
+    start = (cmap.meta or {}).get("start")
     d = math.hypot(g0.x, g0.y)
-    assert abs(d - 3.0) < 1e-6, d
     ang = math.atan2(g0.y, g0.x)
-    assert abs(pq_course.wrap_pi(ang - g0.heading_rad)) < 1e-6
+    if start:
+        assert abs(d - start["to_g0_m"]) < 0.01, d
+        assert abs(pq_course.wrap_pi(ang - g0.heading_rad)) < math.radians(10)
+    else:
+        assert abs(d - 3.0) < 1e-6, d
+        assert abs(pq_course.wrap_pi(ang - g0.heading_rad)) < 1e-6
 
 
 def test_transform_math_roundtrip():
@@ -98,18 +121,19 @@ def test_course_fits_footprint():
 
 def test_course_shape():
     c = course()
-    assert len(c.crossings) == 12          # 12 opening crossings per lap
-    assert len(c.gates) == 12              # 12 physical gates
+    # published map (2026-09-15): 10 gates, gate 9 (label g8) is the double
+    assert len(c.crossings) == 11          # 11 opening crossings per lap
+    assert len(c.gates) == 11              # 11 physical gate bodies
     assert c.laps == 2
-    assert c.total_events == 24
-    stacked = [x for x in c.crossings if x.gate_order == 10]
-    assert [x.label for x in stacked] == ["g10-top", "g10-low"]
+    assert c.total_events == 2 * 11 + 1    # + the finish crossing of g0
+    stacked = [x for x in c.crossings if x.gate_order == 8]
+    assert [x.label for x in stacked] == ["g8-top", "g8-low"]
     top, low = stacked
     assert top.z == 4.05 and low.z == 1.35
     # out-and-back: the two crossing directions oppose
     assert abs(abs(pq_course.wrap_pi(top.heading_rad - low.heading_rad))
                - math.pi) < 0.05
-    assert len(c.cones) == 10
+    assert len(c.cones) == 6
 
 
 # ---------------------------------------------------------------------------
@@ -165,18 +189,16 @@ def test_scripted_two_laps_all_events_in_order():
         f"next={tracker.next_crossing()}"
     )
     rec = tracker.record(final_t)
-    assert rec["gates_passed"] == 24
-    assert [e["event"] for e in rec["events"]] == list(range(24))
-    # per lap: 12 crossings, stacked z sequence 4.05 then 1.35 at the end
-    for lap in range(2):
-        lap_events = [e for e in rec["events"] if e["lap"] == lap]
-        assert len(lap_events) == 12
-        assert [e["gate"] for e in lap_events[:10]] == [
-            f"g{i}" for i in range(10)]
-        assert lap_events[10]["gate"] == "g10-top"
-        assert lap_events[10]["z"] == 4.05
-        assert lap_events[11]["gate"] == "g10-low"
-        assert lap_events[11]["z"] == 1.35
+    n = c.total_events
+    assert rec["gates_passed"] == n
+    assert [e["event"] for e in rec["events"]] == list(range(n))
+    # event 0 is the start crossing of g0; each lap then runs g1..g7,
+    # g8-top (4.05), g8-low (1.35), g9 and closes on g0
+    per_lap = ["g1", "g2", "g3", "g4", "g5", "g6", "g7", "g8-top", "g8-low", "g9", "g0"]
+    names = [e["gate"] for e in rec["events"]]
+    assert names == ["g0"] + per_lap * 2
+    zs = {e["gate"]: e["z"] for e in rec["events"]}
+    assert zs["g8-top"] == 4.05 and zs["g8-low"] == 1.35
     assert len(rec["lap_times"]) == 2
     assert rec["complete"] is True
     assert rec["total_time_s"] is not None
@@ -213,25 +235,25 @@ def test_outside_opening_does_not_count():
 
 
 def test_stacked_wrong_z_does_not_count():
-    """When g10-top (z=4.05) is expected, flying the same track at the
+    """When g8-top (z=4.05) is expected, flying the same track at the
     BOTTOM opening's height must not count — z disambiguates."""
     c = course()
     tracker = RaceTracker(c)
-    tracker.event_idx = 10  # next expected: g10-top
-    top = c.crossings[10]
+    tracker.event_idx = 8  # next expected: g8-top
+    top = c.crossings[8]
     nx, ny = math.cos(top.heading_rad), math.sin(top.heading_rad)
     z_low = 1.35
     run_path(tracker, [
         (top.x - 2.5 * nx, top.y - 2.5 * ny, z_low),
         (top.x + 2.5 * nx, top.y + 2.5 * ny, z_low),
     ])
-    assert tracker.events_passed == 10  # unchanged
+    assert tracker.events_passed == 8  # unchanged
     # and at the correct height it does count
     run_path(tracker, [
         (top.x - 2.5 * nx, top.y - 2.5 * ny, top.z),
         (top.x + 2.5 * nx, top.y + 2.5 * ny, top.z),
     ])
-    assert tracker.events_passed == 11
+    assert tracker.events_passed == 9
 
 
 def test_cone_near_miss_logged():
@@ -264,9 +286,9 @@ def test_record_is_json_serializable():
     run_path(tracker, reference_waypoints(c, laps=1))
     rec = tracker.record(99.0)
     s = json.dumps(rec)
-    assert "g10-top" in s
+    assert "g8-top" in s
     assert rec["complete"] is False
-    assert rec["gates_passed"] == 12
+    assert rec["gates_passed"] == 1 * 11 + 1   # one lap: start g0, 10 openings, finish g0
 
 
 def test_transform_named_and_single_source():

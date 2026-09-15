@@ -106,7 +106,7 @@ def main():
         cv2.line(side, spx(g.y, g.z - 1.35), spx(g.y, g.z + 1.35), color, 3)
         cv2.line(side, spx(g.y, g.z - 0.75), spx(g.y, g.z + 0.75),
                  (255, 255, 255), 1)
-    cv2.putText(side, "side elevation (y vs z) - both g10 openings",
+    cv2.putText(side, "side elevation (y vs z) - both g8 openings",
                 (MARGIN, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.5, TEXT, 1,
                 cv2.LINE_AA)
 

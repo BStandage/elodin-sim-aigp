@@ -52,7 +52,7 @@ LastGatePassed = ty.Annotated[
 ]
 
 # Sim seconds when each crossing event was completed. `MAX_GATES` slots;
-# -1.0 = "not yet". 2 laps x 12 crossings = 24 events fits in 32.
+# -1.0 = "not yet". 2 laps x 11 crossings + 1 = 23 events fits in 32.
 MAX_GATES = 32
 
 GatePassTimes = ty.Annotated[
@@ -96,7 +96,7 @@ CONE_VISUALS = True
 
 
 def entity_name(label: str) -> str:
-    """Stable Elodin entity name for a course element label like 'g10-top'."""
+    """Stable Elodin entity name for a course element label like 'g8-top'."""
     return "gate_" + label.replace("-", "_")
 
 

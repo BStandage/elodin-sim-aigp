@@ -19,9 +19,10 @@ Sim frame (Elodin): ENU, +X east, +Z up. The drone spawns at the origin.
 Both frames are ENU with +x east, so the rotation between them is zero BY
 DECLARATION (the map's "east" is the render's labeled axis; nothing in
 either frame pins true north). The transform is therefore a pure
-translation, chosen so that the DRONE SPAWN (sim origin) sits
-`start_standoff_m` before the order-0 gate along that gate's entry
-heading. Every downstream position — gates, cones, waypoints — must go
+translation, chosen so that the DRONE SPAWN (sim origin) sits on the
+map's START position (meta.start = the dashed line ~7.3 m behind gate 1
+on the published map), falling back to `start_standoff_m` before the
+order-0 gate along its entry heading for maps without one. Every downstream position — gates, cones, waypoints — must go
 through `MapToSim`. Nothing is hardcoded: the translation is derived from
 the loaded map.
 """
@@ -88,9 +89,15 @@ class MapToSim:
 def map_to_sim_transform(course, start_standoff_m: float = 3.0) -> MapToSim:
     """Both frames are ENU / +x east => rotation 0 (see module docstring).
 
-    Translation places the sim origin (drone spawn) `start_standoff_m`
-    before the order-0 gate's center along that gate's entry heading.
+    Translation places the sim origin (drone spawn) on the map's published
+    START position (`meta.start.xy`, the dashed line behind gate 1) when
+    the map carries one; otherwise `start_standoff_m` before the order-0
+    gate's center along that gate's entry heading.
     """
+    start_meta = (course.meta or {}).get("start")
+    if start_meta and start_meta.get("xy"):
+        sx, sy = float(start_meta["xy"][0]), float(start_meta["xy"][1])
+        return MapToSim(dyaw_rad=0.0, tx=-sx, ty=-sy)
     start = min((g for g in course.gates if g.order is not None),
         key=lambda g: g.order,
     )
@@ -112,7 +119,7 @@ class Crossing:
 
     seq: int                 # index within one lap's crossing sequence
     gate_order: int          # g-number (traversal order, Brian's naming)
-    label: str               # "g3", "g10-top", "g10-low"
+    label: str               # "g3", "g8-top", "g8-low"
     x: float                 # opening center, sim frame
     y: float
     z: float                 # opening center height
@@ -146,8 +153,8 @@ class Cone:
 
 @dataclass(frozen=True)
 class RaceCourse:
-    gates: Tuple[SimGate,...]           # physical bodies (12 for PQ)
-    crossings: Tuple[Crossing,...]      # per-lap sequence (12 for PQ)
+    gates: Tuple[SimGate,...]           # physical bodies (11 for PQ)
+    crossings: Tuple[Crossing,...]      # per-lap sequence (11 for PQ)
     cones: Tuple[Cone,...]
     laps: int
     transform: MapToSim
@@ -155,8 +162,8 @@ class RaceCourse:
     footprint_m: Tuple[float, float]
 
     # A lap is start-line to start-line: g0 (start), then per lap
-    # [g1..g10low, g0]. The final g0 IS the finish line - the run is not
-    # complete until the drone crosses g0 after the last lap's g10-low
+    # [g1..g9, g0]. The final g0 IS the finish line - the run is not
+    # complete until the drone crosses g0 after the last lap's g9
     #. So the event
     # count is laps*per_lap + 1 (the leading start g0), and every g0
     # crossing after the start closes a lap.
@@ -167,8 +174,8 @@ class RaceCourse:
     def event(self, event_idx: int) -> Crossing:
         if event_idx <= 0:
             return self.crossings[0]                      # start g0
-        # repeating tail: g1..g10low, then g0 (the lap/finish line)
-        tail_len = len(self.crossings)                    # 11 gates + g0
+        # repeating tail: g1..g9, then g0 (the lap/finish line)
+        tail_len = len(self.crossings)                    # 10 openings + g0
         tail_pos = (event_idx - 1) % tail_len
         if tail_pos == tail_len - 1:
             return self.crossings[0]                       # g0 finish/lap

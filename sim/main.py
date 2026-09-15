@@ -96,7 +96,7 @@ world = el.World()
 
 # Active race course: the PQ course extracted from the overhead render,
 # loaded through the AI-GrandPrix map loader and expressed in the sim frame
-# (drone spawn = 3 m before g0 along its entry heading; see sim/pq_course.py).
+# (drone spawn = the map's start line, 7.3 m before g0 on the published map; see sim/pq_course.py).
 ACTIVE_COURSE = pq_course.load_course(laps=int(os.environ.get("AIGP_LAPS", "2"))
 )
 pq_course.print_frame_report(ACTIVE_COURSE)

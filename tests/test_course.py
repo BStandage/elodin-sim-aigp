@@ -25,7 +25,7 @@ def _course():
 
 def test_entity_names_are_kdl_safe():
     assert entity_name("g0") == "gate_g0"
-    assert entity_name("g10-top") == "gate_g10_top"
+    assert entity_name("g8-top") == "gate_g8_top"
     for g in _course().gates:
         assert "-" not in entity_name(g.label)
 
@@ -33,7 +33,7 @@ def test_entity_names_are_kdl_safe():
 def test_schematic_renders_one_glb_per_physical_gate():
     c = _course()
     s = schematic_for(c)
-    assert s.count(f'glb path="{GATE_ASSET}"') == len(c.gates) == 12
+    assert s.count(f'glb path="{GATE_ASSET}"') == len(c.gates) == 11
     for g in c.gates:
         ref = f"{entity_name(g.label)}.world_pos"
         assert s.count(ref) == 1, f"{ref} should appear exactly once"
@@ -59,4 +59,4 @@ def test_print_summary_reports_dnf_and_complete():
     c = _course()
     tracker = RaceTracker(c)
     line = print_summary(tracker, 12.0)
-    assert "DNF" in line and "gates_passed=0/24" in line
+    assert "DNF" in line and "gates_passed=0/23" in line
