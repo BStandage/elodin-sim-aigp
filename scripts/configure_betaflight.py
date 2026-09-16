@@ -38,13 +38,13 @@ CLI_PORT = 5761
 CLI_COMMANDS = [
     # Map AUX1 to the ARM mode (mode 0). Trigger when channel value is 1700-2100.
     "aux 0 0 0 1700 2100 0 0",
-    # ACRO ONLY (2026-08-29): the old AUX2->ANGLE mapping was INERT the
-    # whole time - solvers send aux2=1500, outside 1700-2100, so the FC has
-    # always flown acro (confirmed by sysid: slew scaled with stick_clamp
-    # along the ACTUAL-rates curve; angle_limit/angle_p_gain steps measured
-    # +0.0). The mapping is removed so nobody trips over it again; sticks
-    # are BODY RATE commands, and Brian wants acro anyway (inversion later).
-    "aux 1 0 0 900 900 0 0",
+    # ANGLE mode on AUX2 high (1700-2100): the hardware control shape. A
+    # solver that sends aux2=1500 (the default) still flies ACRO with body
+    # rate sticks; one that sends aux2=1800 (AIGP_ANGLE_MODE=1 in
+    # solvers.follower) gets the FC's own attitude loop with the sticks as
+    # tilt angles, full stick = angle_limit.
+    "aux 1 1 1 1700 2100 0 0",
+    "set angle_limit = 80",
     # 1:1 PID denom for lockstep SITL
     "set gyro_hardware_lpf = NORMAL",
     "set pid_process_denom = 1",

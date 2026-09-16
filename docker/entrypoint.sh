@@ -83,9 +83,10 @@ if [ -z "${AIGP_TRAJ:-}" ]; then
         if [ -z "${AIGP_VEHICLE_TOML:-}" ]; then
             B=$(grep -o '"config_path": "[^"]*"' "$T" | cut -d'"' -f4 || true)
             B="${B//\\//}"        # Windows backslashes -> forward slashes
-            B="${B##*/}"          # basename (works now that sep is '/')
-            if [ -n "$B" ] && [ -f "${AIGP_REPO}/config/${B}" ]; then
-                export AIGP_VEHICLE_TOML="${AIGP_REPO}/config/${B}"
+            if [ -n "$B" ] && [ -f "${AIGP_REPO}/${B}" ]; then
+                export AIGP_VEHICLE_TOML="${AIGP_REPO}/${B}"      # repo-relative config_path (config/ladder/... included)
+            elif [ -n "$B" ] && [ -f "${AIGP_REPO}/config/${B##*/}" ]; then
+                export AIGP_VEHICLE_TOML="${AIGP_REPO}/config/${B##*/}"
             else
                 export AIGP_VEHICLE_TOML="${AIGP_REPO}/config/vehicle.toml"
             fi

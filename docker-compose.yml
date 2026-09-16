@@ -26,13 +26,15 @@ services:
       - seccomp:unconfined
     ports:
       - "2240:2240"    # Elodin render server (editor connects here)
-      # - "5761:5761"  # uncomment for Betaflight Configurator (app.betaflight.com -> TCP)
+      - "5761:5761"    # Betaflight SITL MSP/CLI: the configurator (manual TCP connection) and AI-GrandPrix hardware.bench --tcp 127.0.0.1:5761
     environment:
       RACE_SOLVER: ${RACE_SOLVER:-solvers.follower}
       AIGP_SIM_TIME: ${AIGP_SIM_TIME:-250.0}
       AIGP_TRAJ: ${AIGP_TRAJ:-}         # explicit plan path (container side); empty = entrypoint picks plan_RACE.json
       AIGP_LAPS: ${AIGP_LAPS:-}     # empty = take laps from the plan (entrypoint)
       AIGP_REALTIME: ${AIGP_REALTIME:-1}
+      AIGP_VEHICLE_TOML: ${AIGP_VEHICLE_TOML:-}   # container-side toml path; empty = entrypoint derives it from the plan
+      AIGP_ANGLE_MODE: ${AIGP_ANGLE_MODE:-0}       # 1 = solvers.follower flies Betaflight ANGLE mode (aux2 high, tilt-angle sticks)
     volumes:
       # Both repos live on the host, side by side, exactly like the
       # WSL/native setup — edit solver code on the host, run in here.

@@ -163,7 +163,7 @@ RACE_SOLVER=solvers.follower uv run -- elodin run sim/main.py
 Healthy output ends like:
 
 ```text
-[GATE] lap 1 g10-low (event 23) at t=225.30s z_opening=1.35 ...
+[GATE] lap 1 g8-low (event 20) at t=26.67s z_opening=1.35 ...
 [RACE] course=course_map.json (estimated_from_overhead_image) laps=2
        gates_passed=24/24 total_time=225.30s lap_times=[114.70,110.60]
        status=COMPLETE near_misses=0
