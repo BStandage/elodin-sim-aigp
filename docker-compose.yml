@@ -35,6 +35,8 @@ services:
       AIGP_REALTIME: ${AIGP_REALTIME:-1}
       AIGP_VEHICLE_TOML: ${AIGP_VEHICLE_TOML:-}   # container-side toml path; empty = entrypoint derives it from the plan
       AIGP_ANGLE_MODE: ${AIGP_ANGLE_MODE:-0}       # 1 = solvers.follower flies Betaflight ANGLE mode (aux2 high, tilt-angle sticks)
+      AIGP_SEEKER_CFG: ${AIGP_SEEKER_CFG:-{}}      # JSON overrides for seeker.brain.SeekerConfig
+      AIGP_STATE_SOURCE: ${AIGP_STATE_SOURCE:-ground_truth}   # deadreckon = vision-aided dead reckoning (no ground-truth position)
     volumes:
       # Both repos live on the host, side by side, exactly like the
       # WSL/native setup — edit solver code on the host, run in here.
