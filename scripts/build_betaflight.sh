@@ -37,11 +37,15 @@ fi
 
 # Helper function to run make with proper flags
 run_make() {
+    # Betaflight 4.5's makefile insists on one exact arm-none-eabi-gcc version
+    # even for the SITL target (which never uses it). Accept whatever the
+    # image ships; the override is the makefile's own escape hatch.
+    GCC_VER=$(arm-none-eabi-gcc -dumpversion 2>/dev/null || echo 10.3.1)
     if [[ -n "$MACOS_OPTIMISATION_BASE" ]]; then
         # Use EXTRA_FLAGS to add -Wno-error which disables treating warnings as errors
-        make "OPTIMISATION_BASE=$MACOS_OPTIMISATION_BASE" "EXTRA_FLAGS=-Wno-error" "$@"
+        make "GCC_REQUIRED_VERSION=$GCC_VER" "OPTIMISATION_BASE=$MACOS_OPTIMISATION_BASE" "EXTRA_FLAGS=-Wno-error" "$@"
     else
-        make "$@"
+        make "GCC_REQUIRED_VERSION=$GCC_VER" "$@"
     fi
 }
 
@@ -79,7 +83,8 @@ case "${1:-build}" in
         
         # Enable simulator GYROPID sync for lockstep synchronization with Elodin
         # This makes Betaflight block on FDM packets, allowing tight timing control
-        TARGET_H="$BETAFLIGHT_DIR/src/platform/SIMULATOR/target/SITL/target.h"
+        TARGET_H="$BETAFLIGHT_DIR/src/platform/SIMULATOR/target/SITL/target.h"   # 2026.x layout
+        [ -f "$TARGET_H" ] || TARGET_H="$BETAFLIGHT_DIR/src/main/target/SITL/target.h"   # 4.5.x layout
         if grep -q "^//#define ENABLE_SIMULATOR_GYROPID_SYNC 1" "$TARGET_H"; then
             echo "Enabling ENABLE_SIMULATOR_GYROPID_SYNC for lockstep mode..."
             sed -i.bak 's|^//#define ENABLE_SIMULATOR_GYROPID_SYNC 1|#define ENABLE_SIMULATOR_GYROPID_SYNC 1|' "$TARGET_H"

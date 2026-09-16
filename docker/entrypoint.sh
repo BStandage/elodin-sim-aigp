@@ -69,31 +69,33 @@ fi
 # Pinned plan first (plan_RACE.json, what run_race.cmd/launch_race.sh
 # fly), else the newest plan_*.json. Laps come from the plan unless the
 # caller set AIGP_LAPS (docker-compose passes it through empty otherwise).
-if [ -z "${AIGP_TRAJ:-}" ]; then
+T="${AIGP_TRAJ:-}"
+if [ -z "$T" ]; then
     T="${AIGP_REPO}/out/plans/plan_RACE.json"
     [ -f "$T" ] || T=$(ls -t "${AIGP_REPO}"/out/plans/plan_*.json 2>/dev/null | head -1 || true)
-    if [ -n "$T" ]; then
-        export AIGP_TRAJ="$T"
-        echo "==> Using plan: $T"
-        if [ -z "${AIGP_LAPS:-}" ]; then
-            L=$(grep -o '"laps": [0-9]*' "$T" | head -1 | grep -o '[0-9]*' || true)
-            export AIGP_LAPS="${L:-2}"
-        fi
-        echo "==> Laps: $AIGP_LAPS"
-        if [ -z "${AIGP_VEHICLE_TOML:-}" ]; then
-            B=$(grep -o '"config_path": "[^"]*"' "$T" | cut -d'"' -f4 || true)
-            B="${B//\\//}"        # Windows backslashes -> forward slashes
-            if [ -n "$B" ] && [ -f "${AIGP_REPO}/${B}" ]; then
-                export AIGP_VEHICLE_TOML="${AIGP_REPO}/${B}"      # repo-relative config_path (config/ladder/... included)
-            elif [ -n "$B" ] && [ -f "${AIGP_REPO}/config/${B##*/}" ]; then
-                export AIGP_VEHICLE_TOML="${AIGP_REPO}/config/${B##*/}"
-            else
-                export AIGP_VEHICLE_TOML="${AIGP_REPO}/config/vehicle.toml"
-            fi
-            echo "==> Using toml: $AIGP_VEHICLE_TOML"
+    [ -n "$T" ] && export AIGP_TRAJ="$T"
+fi
+if [ -n "$T" ] && [ -f "$T" ]; then
+    echo "==> Using plan: $T"
+    if [ -z "${AIGP_LAPS:-}" ]; then
+        L=$(grep -o '"laps": [0-9]*' "$T" | head -1 | grep -o '[0-9]*' || true)
+        export AIGP_LAPS="${L:-2}"
+    fi
+    echo "==> Laps: $AIGP_LAPS"
+    if [ -z "${AIGP_VEHICLE_TOML:-}" ]; then
+        B=$(grep -o '"config_path": "[^"]*"' "$T" | cut -d'"' -f4 || true)
+        B="${B//\\//}"        # Windows backslashes -> forward slashes
+        if [ -n "$B" ] && [ -f "${AIGP_REPO}/${B}" ]; then
+            export AIGP_VEHICLE_TOML="${AIGP_REPO}/${B}"      # repo-relative config_path (config/ladder/... included)
+        elif [ -n "$B" ] && [ -f "${AIGP_REPO}/config/${B##*/}" ]; then
+            export AIGP_VEHICLE_TOML="${AIGP_REPO}/config/${B##*/}"
+        else
+            export AIGP_VEHICLE_TOML="${AIGP_REPO}/config/vehicle.toml"
         fi
     fi
 fi
+[ -z "${AIGP_VEHICLE_TOML:-}" ] && export AIGP_VEHICLE_TOML="${AIGP_REPO}/config/vehicle.toml"
+echo "==> Using toml: $AIGP_VEHICLE_TOML"
 export AIGP_LAPS="${AIGP_LAPS:-2}"
 
 exec "$@"

@@ -124,7 +124,7 @@ CLI_COMMANDS = [
     # (default gain 80) boosts I on throttle transients and is the other
     # I amplifier; off. P and D untouched. Verified backward compatible
     # by re-flying plan_L5_share10 with solvers.follower in the same batch.
-    "set iterm_windup = 20",
+    "set iterm_windup = 30",   # 4.5.5 allows 30-100 (20 was accepted by the 2026 build)
     "set anti_gravity_gain = 0",
     # (2026-08-29) angle_limit/angle_p_gain sets removed: ANGLE mode was
     # never active (see aux note above) and sysid measured both knobs inert.
