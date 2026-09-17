@@ -126,6 +126,7 @@ class Crossing:
     heading_rad: float       # required travel direction (crossing normal)
     half_w: float = OPENING_HALF_M
     half_h: float = OPENING_HALF_M
+    either_direction: bool = False   # the organizers allow this crossing in either direction
 
 
 @dataclass(frozen=True)
@@ -225,6 +226,7 @@ def load_course(map_path: Optional[os.PathLike] = None,
             ))
             crossings.append(Crossing(seq=seq, gate_order=g.order, label=f"g{g.order}",
                 x=x, y=y, z=z, heading_rad=entry,
+                either_direction=bool(g.extras.get("either_direction", False)),
             ))
             seq += 1
         else:
@@ -286,7 +288,9 @@ def crossing_hit(c: Crossing,
     nx, ny = math.cos(c.heading_rad), math.sin(c.heading_rad)
     s0 = (prev_pos[0] - c.x) * nx + (prev_pos[1] - c.y) * ny
     s1 = (curr_pos[0] - c.x) * nx + (curr_pos[1] - c.y) * ny
-    if not (s0 < 0.0 <= s1):
+    forward = s0 < 0.0 <= s1
+    backward = getattr(c, "either_direction", False) and s0 > 0.0 >= s1
+    if not (forward or backward):
         return False
     f = s0 / (s0 - s1)
     px = prev_pos[0] + (curr_pos[0] - prev_pos[0]) * f
