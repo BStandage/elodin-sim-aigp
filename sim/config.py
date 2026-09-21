@@ -74,8 +74,21 @@ class DroneConfig:
         default_factory=lambda: np.array([0.0089, 0.0055, 0.0144])
     )
 
-    # Arm length from center to motor in meters (half of motor-to-motor distance)
-    arm_length: float = 0.181    # MEASURED d45 2026-09-20: motors 8.8 in front-back, 11.2 in side-side -> true centre-to-motor 0.181 m
+    # MEASURED MOTOR GEOMETRY, d45 2026-09-20, centre to centre:
+    #   8.8 in front-back  -> +-0.1118 m along body x
+    #   11.2 in side-side  -> +-0.1422 m along body y
+    # The airframe is NOT square. inertia_diagonal has said so since it was
+    # measured, but motor_positions was still laying the motors out on a
+    # square of arm_length*sqrt(2)/2 = 0.128 m - too far forward and not far
+    # enough out. That understates roll authority and overstates pitch, which
+    # is exactly the axis pair the blackbox step response disagreed about.
+    # None on any other airframe falls back to a square of arm_length, which
+    # is what the other presets below mean and all they have ever specified.
+    motor_x_m: Optional[float] = 0.1118    # half of 8.8 in
+    motor_y_m: Optional[float] = 0.1422    # half of 11.2 in
+    # Kept for anything that still wants a single number; it is the diagonal
+    # centre-to-motor distance implied by the rectangle above.
+    arm_length: float = 0.181
 
     # Conservative per-motor max thrust (N). Betaflight SITL often drives mixed
     # outputs hard; keeping this modest stops the smoke-test airframe from
@@ -233,13 +246,14 @@ class DroneConfig:
         raw Betaflight SITL motor output order. See ARCHITECTURE.md for the
         full Quad-X layout and the matching spin/torque sign tables."""
         d = self.arm_length * np.sqrt(2) / 2
-
+        x = self.motor_x_m if self.motor_x_m is not None else d
+        y = self.motor_y_m if self.motor_y_m is not None else d
         return np.array(
             [
-                [-d, -d, 0.0],  # BR
-                [d, -d, 0.0],   # FR
-                [-d, d, 0.0],   # BL
-                [d, d, 0.0],    # FL
+                [-x, -y, 0.0],  # BR
+                [x, -y, 0.0],   # FR
+                [-x, y, 0.0],   # BL
+                [x, y, 0.0],    # FL
             ]
         )
 
@@ -304,6 +318,7 @@ def create_5inch_racing_quad() -> DroneConfig:
         mass=0.65,
         inertia_diagonal=np.array([0.0020, 0.0020, 0.0035]),
         arm_length=0.11,
+        motor_x_m=None, motor_y_m=None,   # square airframe
         motor_max_thrust=14.0,
         motor_time_constant=0.015,
         motor_torque_coeff=0.010,
@@ -318,6 +333,7 @@ def create_3inch_cinewhoop() -> DroneConfig:
         mass=0.35,
         inertia_diagonal=np.array([0.0008, 0.0008, 0.0015]),
         arm_length=0.08,
+        motor_x_m=None, motor_y_m=None,   # square airframe
         motor_max_thrust=6.0,
         motor_time_constant=0.025,
         motor_torque_coeff=0.008,
@@ -332,6 +348,7 @@ def create_7inch_long_range() -> DroneConfig:
         mass=1.2,
         inertia_diagonal=np.array([0.0045, 0.0045, 0.008]),
         arm_length=0.16,
+        motor_x_m=None, motor_y_m=None,   # square airframe
         motor_max_thrust=18.0,
         motor_time_constant=0.030,
         motor_torque_coeff=0.015,
