@@ -87,10 +87,23 @@ def create_motor_dynamics(config: DroneConfig):
     max_thrust = config.motor_max_thrust
     alpha = dt / (dt + tau)
 
+    # THE MEASURED CURVE, not a linear map. A real motor's thrust is not
+    # proportional to its command, and ours is measured: curve_pwm ->
+    # curve_acc in the flight config, fitted from the organizers' blackbox and
+    # then corrected in flight on 2026-09-21 by -60 PWM. Hover sits at 1228 of
+    # a 1000-2000 range, which is 22.8 percent of command and 16.7 percent of
+    # thrust - a linear model puts hover at 16.7 percent of COMMAND and is
+    # wrong by 6 points of throttle everywhere near it.
+    #
+    # Same table, same numbers, same file the aircraft flies. If the curve is
+    # re-measured, the sim moves with it and nobody has to remember to copy it.
+    curve_cmd = jnp.asarray(config.curve_cmd)
+    curve_thrust_n = jnp.asarray(config.curve_thrust_n)
+
     @el.map
     def motor_dynamics(cmd: MotorCommand, thrust: MotorThrust) -> MotorThrust:
         cmd_clamped = jnp.clip(cmd, 0.0, 1.0)
-        target_thrust = cmd_clamped * max_thrust
+        target_thrust = jnp.interp(cmd_clamped, curve_cmd, curve_thrust_n)
         return thrust + alpha * (target_thrust - thrust)
 
     return motor_dynamics

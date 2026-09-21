@@ -15,6 +15,7 @@ import jax.random as rng
 import numpy as np
 
 from sim.config import DroneConfig
+from sim.physics import MotorThrust
 from sim.betaflight_bridge import FDMPacket
 
 
@@ -58,8 +59,31 @@ class Noise:
 # motor imbalance at liftoff, so the variances are deliberately modest.
 gyro_noise = Noise(0, 0, 0.01, 0.001)
 accel_noise = Noise(0, 1, 0.01, 0.001)
-# sqrt(0.01) ~= 0.1 m one-sigma on barometric altitude.
-baro_noise = Noise(0, 2, 0.01, 0.001)
+# THE REAL BAROMETER, measured on d44 and d45, 2026-09-20/21.
+#
+# The sim used to hand the autopilot ground-truth altitude with 0.1 m of
+# Gaussian noise, which is why the sim never once reproduced a failure that
+# broke two airframes in a day. The real sensor:
+#
+#   quantisation  0.076 m   1 Pa steps (d45, table test: it measured a
+#                           0.762 m table to within 2 cm, but never finer
+#                           than 8 cm)
+#   drift         0.25 m/min at rest
+#   white noise   0.02 m    what is left on a bench
+#   SPIKES        coupled to how fast the THROTTLE is moving
+#
+# The spikes are the whole point. d44 logged a clean trace under a steady
+# throttle and read +1.76 m minutes later with the altitude loop chasing;
+# d45 read -3.86 m mid-launch while sitting at 0.3 m. Same aircraft, same
+# current. The loop disturbs its own sensor, so the disturbance here scales
+# with the rate of change of commanded thrust - which closes the same
+# positive feedback path the real aircraft is in.
+baro_noise = Noise(0, 2, 0.0004, 0.0)      # 0.02 m one-sigma
+baro_spike = Noise(0, 3, 1.0, 0.0)         # shaped by the throttle rate below
+BARO_LSB_M = 0.076                          # 1 Pa
+BARO_DRIFT_MPS = 0.25 / 60.0
+BARO_SPIKE_GAIN = 0.010                     # metres of spike per unit thrust rate
+BARO_SPIKE_RATE = 2.0                       # expected spikes/s at a hard chase
 mag_noise = Noise(0, 3, 0.01, 0.001)
 
 
@@ -117,6 +141,17 @@ Baro = ty.Annotated[
         "baro",
         el.ComponentType(el.PrimitiveType.F64, (1,)),
         metadata={"priority": 152},
+    ),
+]
+
+# Total commanded thrust at the previous baro tick. The barometer's spikes
+# scale with how fast the throttle is MOVING, so the sensor needs a rate, and
+# a rate needs a memory.
+PrevThrustSum = ty.Annotated[
+    jax.Array,
+    el.Component(
+        "prev_thrust_sum",
+        el.ComponentType(el.PrimitiveType.F64, (1,)),
     ),
 ]
 
@@ -188,6 +223,7 @@ class IMU(el.Archetype):
     # Previous readings for multi-rate hold (sensors slower than PID loop)
     prev_accel: PrevAccel = field(default_factory=lambda: jnp.array([0.0, 0.0, 9.80665]))
     prev_baro: PrevBaro = field(default_factory=lambda: jnp.zeros(1))
+    prev_thrust_sum: PrevThrustSum = field(default_factory=lambda: jnp.zeros(1))
     prev_mag: PrevMag = field(default_factory=lambda: jnp.array([1.0, 0.0, 0.0]))
 
 
@@ -307,30 +343,58 @@ def create_body_vel_system(config: DroneConfig):
 
 
 def create_baro_system(config: DroneConfig):
-    """Altitude-as-baro readout, decimated to `baro_tick_interval`."""
-    tick_interval = config.baro_tick_interval
+    """Altitude-as-baro readout, decimated to `baro_tick_interval`.
 
-    def _compute_baro_reading(tick: jax.Array, pos: el.SpatialTransform) -> jax.Array:
+    Models the REAL sensor, not an idealised one - see the note at
+    baro_noise. `config.baro_pathology` turns the measured misbehaviour on;
+    without it this is the old ground-truth-plus-noise reading, kept so the
+    difference can be flown both ways."""
+    tick_interval = config.baro_tick_interval
+    dt_baro = tick_interval / config.pid_rate
+
+    def _compute_baro_reading(tick, pos, thrust_rate) -> jax.Array:
         altitude = pos.linear()[2]
         baro_reading = jnp.array([altitude])
-        if config.sensor_noise:
-            baro_reading = baro_noise.sample(baro_reading, jnp.zeros(1), tick)
-        return baro_reading
+        if not config.sensor_noise:
+            return baro_reading
+        baro_reading = baro_noise.sample(baro_reading, jnp.zeros(1), tick)
+        if not getattr(config, "baro_pathology", True):
+            return baro_reading
+        # drift at rest, and the 1 Pa quantisation the real sensor reports in
+        baro_reading = baro_reading + BARO_DRIFT_MPS * tick / config.pid_rate
+        # THROTTLE-COUPLED SPIKE, driven by how fast total thrust is changing -
+        # that is what stirs the air over the sensor, and it is the path by
+        # which the altitude loop disturbs its own measurement.
+        rate = jnp.abs(thrust_rate)
+        scale = jnp.minimum(1.0, rate / 1300.0)
+        draw = baro_spike.sample(jnp.zeros(1), jnp.zeros(1), tick + 7777)
+        hit = (jnp.abs(draw) > (1.0 - BARO_SPIKE_RATE * dt_baro * scale) * 3.0)
+        baro_reading = baro_reading + jnp.where(
+            hit, draw * BARO_SPIKE_GAIN * rate, 0.0)
+        return jnp.round(baro_reading / BARO_LSB_M) * BARO_LSB_M
 
     @el.map
     def compute_baro(
         tick: SensorTick,
         pos: el.WorldPos,
         prev_baro: PrevBaro,
-    ) -> tuple[Baro, PrevBaro]:
-        new_reading = _compute_baro_reading(tick, pos)
+        motor_thrust: MotorThrust,
+        prev_sum: PrevThrustSum,
+    ) -> tuple[Baro, PrevBaro, PrevThrustSum]:
+        # newtons per second of total thrust change, in PWM-equivalent terms:
+        # the whole 1000-2000 range spans config.curve_thrust_n, so scale by
+        # 1000/(max-min) to keep BARO_SPIKE_GAIN in the units it was fitted in
+        now_sum = jnp.sum(motor_thrust)[None]
+        span = float(max(config.curve_thrust_n) * 4.0 - min(config.curve_thrust_n) * 4.0)
+        rate_pwm_s = jnp.abs(now_sum - prev_sum) / max(dt_baro, 1e-3) * (1000.0 / span)
+        new_reading = _compute_baro_reading(tick, pos, rate_pwm_s)
         baro_out = jax.lax.cond(
             tick % tick_interval == 0,
             lambda _: new_reading,
             lambda _: prev_baro,
             None,
         )
-        return baro_out, baro_out
+        return baro_out, baro_out, now_sum
 
     return compute_baro
 

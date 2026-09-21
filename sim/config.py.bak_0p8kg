@@ -56,43 +56,21 @@ class DroneConfig:
 
     _GLOBAL: ClassVar[Optional[Self]] = None
 
-    # Total mass in kg. 2.5 = the AIGP Archer, all-up (PROVISIONAL 2026-09-20,
-    # not yet weighed). Was 0.8, a 5" toy - plans built for the real aircraft
-    # crashed 6/6 against that plant. Revert: sim/config.py.bak_0p8kg
-    mass: float = 1.751   # MEASURED all-up with props and prop protection,
-                          # d44/d45, 2026-09-20. 1.59 kg bare.
+    # Total mass in kg (typical 5" quad with battery)
+    mass: float = 0.8
 
     # Moment of inertia diagonal [Ixx, Iyy, Izz] in kg*m^2 for a 5" quad.
     inertia_diagonal: NDArray[np.float64] = field(
-        # FROM MEASURED GEOMETRY (d45, 2026-09-20): motor centres 8.8 in
-        # front-back, 11.2 in side-side, so x = +-0.1118 m, y = +-0.1422 m and
-        # I = 4 * m_motor * offset^2 with ~110 g per motor+arm. The frame is
-        # WIDER than long, so roll inertia is 1.62x pitch - and with pitch PIDs
-        # ~30 % higher that predicts a 2.11 pitch/roll rate ratio against the
-        # 2.17 measured in the blackbox step response. The previous symmetric
-        # guess (0.0148 both) was 65 % high on roll and 170 % on pitch.
-        default_factory=lambda: np.array([0.0089, 0.0055, 0.0144])
+        default_factory=lambda: np.array([0.0025, 0.0025, 0.004])
     )
 
     # Arm length from center to motor in meters (half of motor-to-motor distance)
-    arm_length: float = 0.181    # MEASURED d45 2026-09-20: motors 8.8 in front-back, 11.2 in side-side -> true centre-to-motor 0.181 m
+    arm_length: float = 0.12
 
     # Conservative per-motor max thrust (N). Betaflight SITL often drives mixed
     # outputs hard; keeping this modest stops the smoke-test airframe from
     # rocketing away while still allowing hover.
-    # 28 N x 4 = 112 N = TWR 4.57 at 2.5 kg. The blackbox curve extrapolates to
-    # 5.5 TWR at full throttle; we deliberately under-power the sim so a plan
-    # that passes here also passes on the real aircraft.
-    motor_max_thrust: float = 25.66
-    # DERIVED FROM THE MEASURED THRUST CURVE, 2026-09-21. The curve tops out at
-    # 58.61 m/s^2 of specific thrust (5.98 g) at 2000 PWM, so total thrust is
-    # 58.61 * 1.751 = 102.6 N over four motors. Was 18.8, which came from the
-    # organizers' blackbox fitted to THEIR aircraft's mass - the same error
-    # that had the real aircraft delivering 1.45 g when commanded 1 g and
-    # climbing away on every flight of 2026-09-20.
-    #
-    # Hover is 16.7 percent throttle at this thrust, matching hover_pwm 1228
-    # on a 1000-2000 range.
+    motor_max_thrust: float = 8.6
 
     # Motor time constant in seconds (response time)
     motor_time_constant: float = 0.02
@@ -105,11 +83,7 @@ class DroneConfig:
     # capped climb at 0.8 m/s AT FULL THROTTLE on a TWR-4.4 airframe. Brought
     # in line with the presets; altitude-loop gains tuned under the old
     # damping may need revisiting.
-    linear_drag: NDArray[np.float64] = field(
-        # Despite the name this is QUADRATIC (physics.py: F = -k|v|v). Matched
-        # to the flight configs' drag_quad 0.23 and drag_quad_z 0.45, so the
-        # sim and the planner agree about what the airframe costs to push.
-        default_factory=lambda: np.array([0.23, 0.23, 0.45]))
+    linear_drag: NDArray[np.float64] = field(default_factory=lambda: np.array([0.2, 0.2, 0.4]))
 
     # Rotational drag coefficient [drag_roll, drag_pitch, drag_yaw] in N*m/(rad/s)
     angular_drag: NDArray[np.float64] = field(default_factory=lambda: np.array([0.01, 0.01, 0.015]))
@@ -136,21 +110,6 @@ class DroneConfig:
     simulation_time: float = 15.0
 
     # Enable sensor noise simulation.
-    # THE AIRCRAFT'S OWN THRUST CURVE, loaded from the flight config so the
-    # sim and the aircraft cannot drift apart. curve_cmd is the motor command
-    # 0..1 that Betaflight produces from each PWM (pwm-1000)/1000;
-    # curve_thrust_n is the PER-MOTOR thrust in newtons that produced the
-    # measured specific acceleration at that PWM, given this mass.
-    curve_pwm: NDArray[np.float64] = field(
-        default_factory=lambda: np.array([1000, 1150, 1291, 1450, 1600, 1800, 2000], dtype=float))
-    curve_acc: NDArray[np.float64] = field(
-        default_factory=lambda: np.array([1.18, 5.87, 13.03, 21.86, 31.03, 44.35, 58.61]))
-
-    # Reproduce the barometer's measured misbehaviour (quantisation, drift and
-    # throttle-coupled spikes). False gives the old ground-truth-plus-noise
-    # reading, so the difference can be flown both ways.
-    baro_pathology: bool = True
-
     sensor_noise: bool = True
 
     # Sensor update rates labelled at Elodin Aleph hardware rates. Sensors slower
@@ -196,16 +155,6 @@ class DroneConfig:
     def gyro_tick_interval(self) -> int:
         """Ticks between gyro updates (1 = every tick)."""
         return max(1, round(self.pid_rate / self.gyro_rate))
-
-    @property
-    def curve_cmd(self) -> NDArray[np.float64]:
-        """Motor command 0..1 for each point of the measured PWM curve."""
-        return (np.asarray(self.curve_pwm) - 1000.0) / 1000.0
-
-    @property
-    def curve_thrust_n(self) -> NDArray[np.float64]:
-        """Per-motor thrust in newtons at each point of the measured curve."""
-        return np.asarray(self.curve_acc) * self.mass / 4.0
 
     @property
     def accel_tick_interval(self) -> int:
