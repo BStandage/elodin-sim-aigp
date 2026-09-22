@@ -473,7 +473,18 @@ def build_fdm_from_components(
 
     # Extract quaternion from Elodin format [qx, qy, qz, qw] and convert to [qw, qx, qy, qz]
     quat_xyzw = np.array(world_pos[:4])
-    quat = np.array([quat_xyzw[3], quat_xyzw[0], quat_xyzw[1], quat_xyzw[2]])  # [w, x, y, z]
+    # THE SITL WANTS THE GAZEBO PLUGIN'S QUATERNION, NOT THE BODY-TO-WORLD ONE
+    # (2026-09-22, found by the ANGLE probe). With ENABLE_GAZEBO_BRIDGE the
+    # SITL (sitl.c) computes q' = Rz(+90 deg) * q_packet and expects
+    # q_packet = Rx(pi) * M * Rx(pi), M being the body(FLU)->world(ENU)
+    # rotation, so that q' is the FRD->NED attitude Betaflight needs. We sent
+    # M itself. The fingerprint: a level aircraft facing +y read yaw 180 in the
+    # SITL instead of 0, and any tilt arrived with its pitch/roll signs
+    # scrambled - so ANGLE mode levelled toward a wrong reference and every
+    # ANGLE flight in this sim ran away within a second of the first stick
+    # input (ACRO never noticed: it uses the gyro alone). Conjugating by
+    # Rx(pi) is (w, x, y, z) -> (w, x, -y, -z).
+    quat = np.array([quat_xyzw[3], quat_xyzw[0], -quat_xyzw[1], -quat_xyzw[2]])  # plugin form, [w, x, y, z]
 
     # Extract position [x, y, z] (ENU)
     position = np.array(world_pos[4:7])

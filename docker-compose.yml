@@ -42,6 +42,8 @@ services:
       AIGP_SEEKER_DET: ${AIGP_SEEKER_DET:-synthetic}   # seeker detector: synthetic or camera
       AIGP_CAM_NOISE: ${AIGP_CAM_NOISE:-1}      # 0 = perfect synthetic detector (diagnostics only)
       AIGP_SEED: ${AIGP_SEED:-0}                # synthetic detector noise seed
+      AIGP_VERT: ${AIGP_VERT:-baro}             # vision = the follower's vertical channel nulls the gate's elevation (the hardware mode)
+      AIGP_GATE_COMMIT_FRAC: ${AIGP_GATE_COMMIT_FRAC:-0.85}   # commit-through-the-gate size fraction (sim mirrors the runtime)
     volumes:
       # Both repos live on the host, side by side, exactly like the
       # WSL/native setup — edit solver code on the host, run in here.
