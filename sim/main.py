@@ -63,6 +63,9 @@ config.simulation_time = float(os.environ.get("AIGP_SIM_TIME", "250.0"))
 # noisy gyro lifts the collective through mixer clipping, so a noisy SITL cannot
 # descend at min throttle - 2026-09-22, race-day validation runs).
 config.sensor_noise = os.environ.get("AIGP_SENSOR_NOISE", "1") != "0"
+# AIGP_BARO_PATHOLOGY=0: plain-noise barometer instead of the measured misbehaviour
+# (d44/d45 model). d43's barometer is visibly cleaner in its logs; 0 is the d43 case.
+config.baro_pathology = os.environ.get("AIGP_BARO_PATHOLOGY", "1") != "0"
 config.set_as_global()
 
 REPO_ROOT = _REPO_ROOT

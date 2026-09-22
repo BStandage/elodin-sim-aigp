@@ -43,6 +43,7 @@ services:
       AIGP_CAM_NOISE: ${AIGP_CAM_NOISE:-1}      # 0 = perfect synthetic detector (diagnostics only)
       AIGP_SEED: ${AIGP_SEED:-0}                # synthetic detector noise seed
       AIGP_SENSOR_NOISE: ${AIGP_SENSOR_NOISE:-1}     # 0 = clean sensors (diagnostics)
+      AIGP_BARO_PATHOLOGY: ${AIGP_BARO_PATHOLOGY:-1}   # 0 = plain-noise barometer (the d43 case)
       AIGP_VERT: ${AIGP_VERT:-baro}             # vision = the follower's vertical channel nulls the gate's elevation (the hardware mode)
       AIGP_GATE_COMMIT_FRAC: ${AIGP_GATE_COMMIT_FRAC:-0.85}   # commit-through-the-gate size fraction (sim mirrors the runtime)
     volumes:
