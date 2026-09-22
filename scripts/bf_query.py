@@ -6,7 +6,7 @@ bf = subprocess.Popen([str(c.BF_BINARY)], stdout=open("/tmp/bf.log","w"), stderr
 time.sleep(3.0)
 cli = c.CLIClient("127.0.0.1", 5761)
 cli.send(b"#\n"); print(cli.drain(1.0)[-200:])
-for cmd in ("status", "aux", "get small_angle", "get angle_limit", "get acc_hardware", "feature", "get mode_range_logic", "version", "map"):
+for cmd in ("get motor_idle", "get dshot_idle_value", "get min_throttle", "get max_throttle", "get min_check", "get max_check", "get motor_pwm_protocol", "get 3d_deadband_low", "get mixer_type", "get thr_mid", "get thr_expo", "get throttle_limit_type", "get idle_min_rpm", "get motor_output_limit", "mixer"):
     cli.send((cmd + "\n").encode()); out = cli.drain(0.8)
     print("=== " + cmd); print(out.strip()[:900])
 cli.close(); bf.kill()

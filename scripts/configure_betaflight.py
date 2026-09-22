@@ -86,14 +86,23 @@ CLI_COMMANDS = [
     # "slew barely cares about PIDs" was measured on STOCK rates, where the
     # map capped everything at ~25 m/s^3 first. Stock rate PIDs, feedforward
     # still OFF (that was the mixer-slamming term), airmode still off.
-    "set p_roll = 45",
-    "set i_roll = 80",
-    "set d_roll = 30",
-    "set p_pitch = 45",
-    "set i_pitch = 80",
-    "set d_pitch = 30",
-    "set p_yaw = 45",
-    "set i_yaw = 80",
+    # SOFTENED AGAIN (2026-09-22). With the attitude quaternion finally in the
+    # frame the SITL expects (sensors.py), ANGLE mode levels - and the stock
+    # rate tune then sits in a fast limit cycle at low throttle: rear motors
+    # pinned at 0.53, front at idle, then the reverse, with the airframe level
+    # to a degree. The average of that churn is hover thrust, so the SITL
+    # climbed at 3 m/s with the throttle stick on the floor (race_040, clean
+    # sensors). The sim airframe has far more torque authority than the real
+    # one for these gains. Halved P and D so the loop settles; the aircraft's
+    # own FC carries its own tune and is unaffected.
+    "set p_roll = 22",
+    "set i_roll = 50",
+    "set d_roll = 14",
+    "set p_pitch = 22",
+    "set i_pitch = 50",
+    "set d_pitch = 14",
+    "set p_yaw = 30",
+    "set i_yaw = 50",
     # Setpoint FEEDFORWARD OFF (2026-09-09, race_001.csv with motors
     # logged): the solver drives the sticks at 1 kHz from a gyro-damped
     # attitude loop, so the setpoint jitters +-50 PWM tick to tick and a

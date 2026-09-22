@@ -59,6 +59,10 @@ config = DEFAULT_CONFIG
 # laps in ~105 s, so 250 s covers 2 laps + margin; race.py sizes it from
 # the plan's predicted time via AIGP_SIM_TIME.
 config.simulation_time = float(os.environ.get("AIGP_SIM_TIME", "250.0"))
+# AIGP_SENSOR_NOISE=0 flies the sensors clean (diagnostics: the rate loop's churn on
+# noisy gyro lifts the collective through mixer clipping, so a noisy SITL cannot
+# descend at min throttle - 2026-09-22, race-day validation runs).
+config.sensor_noise = os.environ.get("AIGP_SENSOR_NOISE", "1") != "0"
 config.set_as_global()
 
 REPO_ROOT = _REPO_ROOT
