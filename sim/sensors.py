@@ -58,7 +58,11 @@ class Noise:
 # bootgrace/calibration period. High noise here causes attitude drift and
 # motor imbalance at liftoff, so the variances are deliberately modest.
 gyro_noise = Noise(0, 0, 0.01, 0.001)
-accel_noise = Noise(0, 1, 0.01, 0.001)
+# accel white noise 1.0 -> 0.01 m^2/s^4 (std 0.1 m/s^2, 2026-09-22): a BMI270-class IMU
+# at full bandwidth is ~0.09 m/s^2 std, and the FC hands the companion a filtered value.
+# At std 1.0 a bias learned over 550 pad samples was off by 0.04 m/s^2, which a leaky
+# inertial vertical speed turns into 0.2 m/s of error - enough to hide a 0.16 m/s climb.
+accel_noise = Noise(0, 0.01, 0.01, 0.001)
 # THE REAL BAROMETER, measured on d44 and d45, 2026-09-20/21.
 #
 # The sim used to hand the autopilot ground-truth altitude with 0.1 m of
